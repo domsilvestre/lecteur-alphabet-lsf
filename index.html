@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<!--
+  Épeler en LSF : reconnaissance de l'alphabet dactylologique de la langue des signes française par webcam.
+  Un seul fichier, à ouvrir directement dans un navigateur récent (Chrome, Edge, Firefox). Aucun serveur, aucun compte.
+  - Détection de la main : MediaPipe Hand Landmarker (bibliothèque et modèle chargés depuis un CDN, exécutés dans le navigateur).
+  - Reconnaissance des lettres : plus proches voisins sur la forme 3D de la main (modèle de main synthétique + repères de référence
+    + exemples enregistrés par l'utilisateur, conservés dans le stockage local du navigateur).
+  Aucune image, vidéo ou donnée ne quitte l'ordinateur.
+-->
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Épeler en LSF — reconnaissance de l'alphabet par webcam</title>
+<style>
+:root{
+  --bg:#f3f5fa; --card:#ffffff; --ink:#111827; --muted:#4b5563; --line:#d5dae5;
+  --primary:#1d4ed8; --primary-ink:#ffffff; --primary-soft:#e0e9ff;
+  --ok:#15803d; --warn:#b45309; --bad:#b91c1c; --accent:#7c3aed;
+  --radius:16px; --shadow:0 1px 2px rgba(16,24,40,.06),0 6px 20px rgba(16,24,40,.07);
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;font-size:17px;line-height:1.45;color:var(--ink);background:var(--bg)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}
+header.top{display:flex;align-items:center;gap:18px;padding:8px 24px;white-space:nowrap;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}
+.brand{display:flex;align-items:center;gap:12px}
+.brand .logo{width:42px;height:42px;border-radius:12px;background:var(--primary);color:#fff;display:grid;place-items:center;font-weight:800;font-size:15px;letter-spacing:.5px}
+.brand h1{font-size:21px;margin:0;line-height:1.1}
+.brand small{display:block;color:var(--muted);font-size:13.5px;font-weight:400}
+nav.tabs{display:flex;gap:6px;margin-left:12px}
+.tab{border:2px solid transparent;background:transparent;padding:9px 16px;border-radius:999px;font-weight:650;cursor:pointer;color:var(--muted)}
+.tab:hover{background:var(--bg)}
+.tab[aria-selected="true"]{background:var(--primary-soft);color:var(--primary);border-color:var(--primary)}
+.privacy{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:14.5px;color:#14532d;background:#dcfce7;border:1px solid #86efac;padding:7px 14px;border-radius:999px;font-weight:600}
+main{max-width:1500px;margin:0 auto;padding:14px 24px 28px}
+.grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(380px,1fr);gap:14px;align-items:stretch}
+.word-card{grid-column:1/-1}
+.card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--line);padding:14px 16px}
+.card h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px;font-weight:700}
+.btn{border:2px solid var(--line);background:#fff;padding:10px 16px;border-radius:12px;font-weight:650;cursor:pointer;display:inline-flex;align-items:center;gap:8px;min-height:46px}
+.btn:hover{border-color:var(--primary);color:var(--primary)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:var(--primary-ink)}
+.btn.primary:hover{background:#1e40af;color:#fff}
+.btn.danger{color:var(--bad);border-color:#fecaca;background:#fff5f5}
+.btn.danger:hover{border-color:var(--bad)}
+.btn.active{background:var(--primary-soft);border-color:var(--primary);color:var(--primary)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.small{min-height:38px;padding:6px 12px;font-size:15px}
+kbd{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;background:#eef1f7;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:1px 6px}
+/* stage */
+.sourcebar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px}
+.sourcebar .btn{min-height:42px;padding:7px 13px}
+.sourcebar .sep{color:var(--muted);font-size:14.5px;margin-left:8px}
+.stage-wrap{position:relative;background:#0b1020;border-radius:12px;overflow:hidden;height:min(46vh,560px);min-height:260px;display:grid;place-items:center}
+#stage{max-width:100%;max-height:min(46vh,560px);min-height:0;width:auto;height:auto;display:block}
+.drophint{font-size:14.5px;margin-top:12px!important}
+.stage-msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;color:#e5e7eb;padding:24px;background:rgba(11,16,32,.86)}
+.stage-msg .inner{max-width:560px}
+.stage-msg h3{font-size:23px;margin:0 0 6px;color:#fff}
+.stage-msg p{margin:4px 0 12px;color:#cbd5e1}
+.stage-msg .btn{font-size:19px;padding:14px 22px}
+.badge{position:absolute;left:12px;top:12px;background:rgba(17,24,39,.78);color:#fff;padding:6px 12px;border-radius:999px;font-size:14.5px;font-weight:600;display:flex;align-items:center;gap:8px}
+.badge .dot{width:10px;height:10px;border-radius:50%;background:#f87171}
+.badge.on .dot{background:#4ade80}
+.badge.warn{background:rgba(146,64,14,.92)}
+.badge.warn .dot{background:#fde047}
+.countdown{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;background:rgba(11,16,32,.35)}
+.countdown .box{background:rgba(17,24,39,.85);color:#fff;border-radius:20px;padding:14px 28px;text-align:center;min-width:260px}
+.countdown .num{font-size:84px;font-weight:800;line-height:1}
+.countdown .lbl{font-size:18px}
+.countdown .rec{color:#fca5a5;font-weight:700}
+.countdown progress{width:100%;height:10px}
+.underbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:8px;font-size:15px;color:var(--muted)}
+.underbar label{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.underbar .status{flex:1;min-width:200px;color:var(--ink)}
+.videoctl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.videoctl progress{width:180px;height:10px}
+.imgresults{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;max-height:118px;overflow:auto}
+.imgresults .res{border:1px solid var(--line);border-radius:10px;padding:5px 10px;font-size:14.5px;background:#fafbfe}
+.imgresults .res b{font-size:17px}
+.imgresults .res.ok{border-color:#86efac;background:#f0fdf4}
+.imgresults .res.ko{border-color:#fecaca;background:#fff5f5}
+/* letter */
+.letter-card{text-align:center}
+.bigletter{font-size:124px;line-height:1;font-weight:800;height:126px;display:grid;place-items:center;color:var(--ink);transition:color .15s}
+.bigletter.none{color:#c3c9d6}
+.bigletter.flash{animation:flash .5s}
+@keyframes flash{0%{transform:scale(1);color:var(--ok)}40%{transform:scale(1.14);color:var(--ok)}100%{transform:scale(1)}}
+.meter{display:grid;grid-template-columns:84px 1fr auto;gap:10px;align-items:center;margin-top:6px;text-align:left;font-size:15.5px}
+.meter .bar{height:16px;background:#e8ebf2;border-radius:999px;overflow:hidden;border:1px solid var(--line)}
+.meter .bar i{display:block;height:100%;width:0;background:var(--ok);border-radius:999px;transition:width .12s linear,background .2s}
+.meter .val{font-weight:700;min-width:104px;text-align:right;font-variant-numeric:tabular-nums}
+.alts{margin-top:8px;font-size:15.5px;color:var(--muted);min-height:24px}
+.alts b{color:var(--ink)}
+.hint{font-size:15px;color:var(--muted);margin:8px 0 0}
+/* word */
+.wordline{display:flex;align-items:center;gap:16px}
+.wordline h2{margin:0;white-space:nowrap}
+.keys{font-size:14.5px;color:var(--muted)}
+#word{flex:1;min-height:84px;border:2px solid var(--line);border-radius:14px;background:#fbfcff;padding:10px 18px;font-size:56px;font-weight:750;letter-spacing:.08em;line-height:1.15;word-break:break-all;display:flex;flex-wrap:wrap;align-items:center}
+#word .ch{display:inline-block;min-width:.35em}
+#word .ch.sp{width:.55em;border-bottom:4px solid #cbd2e0;height:.9em;margin:0 .06em}
+#word .ch.new{animation:pop .45s}
+@keyframes pop{0%{transform:scale(1.6);color:var(--ok)}100%{transform:scale(1)}}
+#word .caret{width:4px;height:.95em;background:var(--primary);margin-left:6px;animation:blink 1.1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+#word .placeholder{font-size:22px;font-weight:500;letter-spacing:0;color:#8a93a6}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;align-items:center}
+.actions .spacer{flex:1}
+.settings{display:flex;flex-wrap:wrap;gap:8px 26px;align-items:center;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:15.5px}
+.settings label{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+.settings input[type=range]{width:160px}
+input[type=checkbox]{width:20px;height:20px;accent-color:var(--primary)}
+/* training */
+.train-card{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
+.side{display:flex;flex-direction:column}
+.lettergrid{display:grid;grid-template-columns:repeat(13,1fr);gap:5px;margin:8px 0}
+.lettergrid button{position:relative;border:2px solid var(--line);background:#fff;border-radius:9px;font-weight:750;font-size:17px;padding:4px 0;min-height:34px;cursor:pointer}
+.lettergrid button:hover{border-color:var(--primary)}
+.lettergrid button[aria-pressed="true"]{background:var(--primary);border-color:var(--primary);color:#fff}
+.lettergrid button.has::after{content:"";position:absolute;top:3px;right:3px;width:9px;height:9px;border-radius:50%;background:var(--accent)}
+.trainmsg{font-size:15px;min-height:24px;margin-top:8px;color:var(--muted)}
+.trainmsg.ok{color:var(--ok);font-weight:600}
+.trainmsg.err{color:var(--bad);font-weight:600}
+/* help */
+.help-intro{display:grid;grid-template-columns:1.2fr 1fr;gap:18px;margin-bottom:18px}
+.help-intro ol,.help-intro ul{margin:6px 0 0;padding-left:22px}
+.help-intro li{margin:5px 0}
+.alpha{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px}
+.alpha figure{margin:0;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:10px 12px 12px;position:relative}
+.alpha figure canvas{width:100%;aspect-ratio:1;display:block}
+.alpha figure .L{position:absolute;left:12px;top:6px;font-size:38px;font-weight:800;color:var(--primary);line-height:1}
+.alpha figure .mv{position:absolute;right:10px;top:10px;font-size:12.5px;background:#ede9fe;color:#5b21b6;border-radius:999px;padding:2px 9px;font-weight:700}
+.alpha figcaption{font-size:14.5px;color:var(--muted);min-height:62px}
+.alpha figure .tr{margin-top:6px}
+.note{background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:10px 14px;font-size:15.5px;margin:0 0 18px}
+@media (max-height:760px){.bigletter{font-size:96px;height:100px}.stage-wrap{height:40vh}#stage{max-height:40vh}#word{min-height:68px;font-size:46px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:1330px){.brand small{display:none}}
+@media (max-width:1180px){.privacy{white-space:normal;font-size:13px;line-height:1.2;padding:5px 12px}}
+@media (max-width:1000px){.grid,.help-intro{grid-template-columns:1fr}.privacy{display:none}#word{font-size:44px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <div class="logo" aria-hidden="true">LSF</div>
+    <div><h1>Épeler en LSF</h1><small>Alphabet de la langue des signes française</small></div>
+  </div>
+  <nav class="tabs" role="tablist" aria-label="Pages">
+    <button class="tab" role="tab" id="tab-reco" aria-selected="true" aria-controls="view-reco">Reconnaissance</button>
+    <button class="tab" role="tab" id="tab-aide" aria-selected="false" aria-controls="view-aide">Aide · Alphabet LSF</button>
+  </nav>
+  <div class="privacy" title="La détection de la main et la reconnaissance tournent dans ce navigateur. Aucune image, aucune vidéo, aucune donnée n'est envoyée.">🔒 100 % local · aucune image ne quitte l'ordinateur</div>
+</header>
+
+<main id="view-reco" role="tabpanel" aria-labelledby="tab-reco">
+  <div class="grid">
+    <section class="card stage-card" aria-label="Image analysée">
+      <div class="sourcebar">
+        <button class="btn primary" id="btnCam">📷 Caméra</button>
+        <span class="sep">Mode test :</span>
+        <button class="btn" id="btnVideo" title="Charger une vidéo enregistrée (mp4) à la place de la caméra">🎞️ Vidéo (mp4)…</button>
+        <button class="btn" id="btnImages" title="Charger une ou plusieurs images à la place de la caméra">🖼️ Images…</button>
+        <button class="btn small" id="btnStop" hidden>■ Arrêter</button>
+        <input type="file" id="fileVideo" accept="video/mp4,video/webm,video/*" hidden>
+        <input type="file" id="fileImages" accept="image/*" multiple hidden>
+      </div>
+      <div class="stage-wrap" id="stageWrap">
+        <canvas id="stage" width="1280" height="720" aria-label="Vidéo avec le squelette de la main"></canvas>
+        <div class="badge" id="handBadge" hidden><span class="dot"></span><span id="handBadgeTxt">Aucune main</span></div>
+        <div class="countdown" id="countdown" hidden><div class="box"><div class="num" id="cdNum">3</div><div class="lbl" id="cdLbl">Préparez la lettre</div><progress id="cdProg" max="1" value="0" hidden></progress></div></div>
+        <div class="stage-msg" id="stageMsg">
+          <div class="inner">
+            <h3 id="msgTitle">Montrez une lettre à la caméra</h3>
+            <p id="msgText">La main est détectée et reconnue directement dans votre navigateur. Rien n'est enregistré ni envoyé.</p>
+            <button class="btn primary" id="btnStart">▶ Démarrer la caméra</button>
+            <p class="drophint">ou glissez-déposez ici une vidéo ou des images pour le mode test</p>
+          </div>
+        </div>
+      </div>
+      <div class="underbar">
+        <span class="status" id="status" role="status" aria-live="polite">Prêt. Cliquez sur « Caméra » pour commencer.</span>
+        <span class="videoctl" id="videoCtl" hidden>
+          <button class="btn small" id="btnPlay">⏸ Pause</button>
+          <button class="btn small" id="btnReplay">⟲ Rejouer</button>
+          <label>Vitesse <select id="selSpeed"><option value="0.5">0,5×</option><option value="1" selected>1×</option></select></label>
+          <progress id="vidProg" max="1" value="0"></progress>
+        </span>
+        <label id="lblMirror"><input type="checkbox" id="chkMirror" checked> Effet miroir</label>
+        <span id="fps" aria-hidden="true"></span>
+      </div>
+      <div class="imgresults" id="imgResults" hidden></div>
+    </section>
+
+    <aside class="card side">
+      <section class="letter-card" aria-label="Lettre reconnue">
+        <h2>Lettre reconnue</h2>
+        <div class="bigletter none" id="bigLetter" aria-live="off">–</div>
+        <div class="meter"><span>Confiance</span><div class="bar"><i id="confBar"></i></div><span class="val" id="confVal">—</span></div>
+        <div class="meter"><span>Validation</span><div class="bar"><i id="holdBar" style="background:var(--primary)"></i></div><span class="val" id="holdTxt">—</span></div>
+        <div class="alts" id="alts">Gardez la lettre immobile un instant : elle s'ajoute au mot.</div>
+      </section>
+      <section class="train-card" aria-label="Réapprendre une lettre">
+        <h2>Lettre mal reconnue ? Réapprenez-la</h2>
+        <div class="lettergrid" id="letterGrid" role="group" aria-label="Lettre à réapprendre"></div>
+        <div class="actions" style="margin-top:6px">
+          <button class="btn primary small" id="btnTrain">● Enregistrer « A » (3 s)</button>
+          <button class="btn small" id="btnForget">Oublier « A »</button>
+          <button class="btn small danger" id="btnForgetAll">Tout oublier</button>
+        </div>
+        <div class="trainmsg" id="trainMsg" role="status" aria-live="polite">Choisissez la lettre, cliquez sur « Enregistrer », puis montrez votre main 3 secondes. Vos exemples restent dans ce navigateur.</div>
+      </section>
+    </aside>
+
+    <section class="card word-card" aria-label="Mot épelé">
+      <div class="wordline">
+        <h2>Mot épelé</h2>
+        <div id="word" aria-live="polite" aria-atomic="true"></div>
+      </div>
+      <div class="actions">
+        <button class="btn" id="btnSpace" title="Raccourci : barre d'espace">␣ Espace</button>
+        <button class="btn" id="btnBack" title="Raccourci : Retour arrière">⌫ Effacer la dernière lettre</button>
+        <button class="btn danger" id="btnClear" title="Raccourci : Suppr">🗑 Tout effacer</button>
+        <button class="btn" id="btnCopy">📋 Copier</button>
+        <span class="spacer"></span>
+        <span class="keys">Clavier : <kbd>Espace</kbd> espace · <kbd>⌫</kbd> corriger · <kbd>Suppr</kbd> tout effacer</span>
+      </div>
+      <div class="settings">
+        <label title="Temps pendant lequel la lettre doit rester stable avant d'être écrite">Écrire la lettre après
+          <input type="range" id="rngHold" min="400" max="2000" step="100" value="800"> <b id="holdVal">0,8 s</b> d'immobilité</label>
+        <label><input type="checkbox" id="chkAutoSpace" checked> Espace automatique quand la main sort de l'image (1,5 s)</label>
+      </div>
+    </section>
+  </div>
+</main>
+
+<main id="view-aide" role="tabpanel" aria-labelledby="tab-aide" hidden>
+  <div class="help-intro">
+    <section class="card">
+      <h2>Comment ça marche</h2>
+      <ol>
+        <li>Cliquez sur <b>Caméra</b> et autorisez l'accès. Placez <b>une main</b> bien visible, à 40–80 cm, avec un bon éclairage.</li>
+        <li>Formez une lettre et <b>gardez-la immobile</b> un court instant : la barre « Validation » se remplit, puis la lettre s'ajoute au mot.</li>
+        <li>Changez de forme pour la lettre suivante. Pour une <b>lettre double</b> (LL, SS…), décalez la main sur le côté, ou baissez-la un instant et refaites la lettre.</li>
+        <li><b>Espace</b> : sortez la main de l'image 1,5 s, ou cliquez sur « Espace », ou appuyez sur la barre d'espace.</li>
+        <li>Une <b>main ouverte</b> (cinq doigts tendus) n'écrit rien : pratique pour faire une pause entre deux lettres.</li>
+        <li><b>J</b> et <b>Z</b> sont des lettres en mouvement : formez la main puis dessinez la lettre dans l'air (sur une image fixe, elles sont reconnues à leur pose).</li>
+      </ol>
+    </section>
+    <section class="card">
+      <h2>Bon à savoir</h2>
+      <ul>
+        <li><b>Confidentialité :</b> tout le calcul se fait dans votre navigateur. Seuls le programme de détection et son modèle sont téléchargés (une fois) depuis un CDN ; aucune image ni donnée n'est envoyée.</li>
+        <li><b>Lettre mal reconnue ?</b> Chaque personne signe un peu différemment. Dans « Réapprenez-la », enregistrez votre main 3 secondes : la lettre est aussitôt corrigée.</li>
+        <li><b>Mode test :</b> chargez une vidéo (mp4) ou des images ; les lettres s'écrivent comme avec la caméra. Une image nommée <i>A.jpg</i> ou <i>mot_B.png</i> est comparée à la lettre attendue.</li>
+        <li>Les dessins ci-dessous montrent la main <b>telle que vous la voyez</b> face à la personne qui signe (main droite).</li>
+      </ul>
+    </section>
+  </div>
+  <p class="note">Il existe de petites variantes de l'alphabet selon les régions et les personnes. Les lettres proches (A / S / E, F / T, U / R / V, M / N) demandent une main bien visible ; n'hésitez pas à les réapprendre avec votre main.</p>
+  <div class="alpha" id="alpha"></div>
+</main>
+
+<video id="video" playsinline muted style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"></video>
+
+<!-- ===================== MOTEUR (modèle de main, caractéristiques, classifieur) ===================== -->
+<script id="engine">
+'use strict';
+const LSF = (function(){
+  const DEG = Math.PI/180;
+  const add=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]];
+  const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+  const mul=(a,k)=>[a[0]*k,a[1]*k,a[2]*k];
+  const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+  const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+  const len=a=>Math.hypot(a[0],a[1],a[2]);
+  const norm=a=>{const l=Math.hypot(a[0],a[1],a[2])||1e-9;return [a[0]/l,a[1]/l,a[2]/l];};
+  const dist=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2]);
+  const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+
+  function rng(seed){
+    let a=seed>>>0;
+    const u=()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};
+    const g=()=>{let x=0;for(let i=0;i<4;i++)x+=u();return (x-2)*1.732;};
+    return {u,g};
+  }
+  function matmul(A,B){const C=[[0,0,0],[0,0,0],[0,0,0]];for(let i=0;i<3;i++)for(let j=0;j<3;j++)for(let k=0;k<3;k++)C[i][j]+=A[i][k]*B[k][j];return C;}
+  function rotMat(rx,ry,rz){
+    const ca=Math.cos(rx*DEG),sa=Math.sin(rx*DEG),cb=Math.cos(ry*DEG),sb=Math.sin(ry*DEG),cg=Math.cos(rz*DEG),sg=Math.sin(rz*DEG);
+    const Rx=[[1,0,0],[0,ca,-sa],[0,sa,ca]], Ry=[[cb,0,sb],[0,1,0],[-sb,0,cb]], Rz=[[cg,-sg,0],[sg,cg,0],[0,0,1]];
+    return matmul(Rz,matmul(Rx,Ry));
+  }
+  const applyM=(M,p)=>[M[0][0]*p[0]+M[0][1]*p[1]+M[0][2]*p[2],M[1][0]*p[0]+M[1][1]*p[1]+M[1][2]*p[2],M[2][0]*p[0]+M[2][1]*p[1]+M[2][2]*p[2]];
+
+  // ---- Géométrie de la main (main droite vue de face, paume vers l'observateur) : x vers la droite (côté pouce), y vers le haut, z vers l'observateur
+  const GEO={
+    mcp:[[0.30,0.93,0],[0.06,1.00,0],[-0.16,0.95,0],[-0.36,0.83,0]],
+    len:[[0.44,0.26,0.21],[0.49,0.30,0.22],[0.45,0.28,0.22],[0.35,0.20,0.19]],
+    splay:[4,0,-4,-9],
+    cmc:[0.30,0.22,0.06], tlen:[0.42,0.34,0.28]
+  };
+  const EXT=[12,10,10,0], FIST=[80,100,65,0], CURVE=[32,45,30,0], OT=[62,60,40,0], OTL=[50,52,32,0], HOOK=[12,40,75,0], CLAW=[45,85,45,0], BENT=[25,40,12,0];
+  const e=(a)=>[12,10,10,a];
+  const T_OUT={d:[0.88,0.42,0.15],c:[-1,0,1],b:[6,6]};
+  const T_UP={d:[0.6,0.78,0.15],c:[-0.3,1,0],b:[8,6]};                  // pouce dressé, un peu écarté (A)
+  const T_PAR={d:[0.50,0.82,0.28],c:[-0.4,1,0],b:[16,8]};               // pouce parallèle aux doigts
+  const T_SIDE={to:[0.60,1.06,0.32]};                                   // pouce contre le côté de l'index (A)
+  const T_OVER={to:[-0.02,0.88,0.58]};                                  // pouce devant les doigts repliés (S)
+  const T_OVERG={to:[0.20,1.10,0.47]};                                  // pouce devant le majeur replié (G)
+  const T_OVER_R={to:[-0.18,0.95,0.50]};                                // pouce devant annulaire/auriculaire
+  const T_PALM={to:[-0.05,0.70,0.16]};                                  // pouce replié dans la paume (B)
+  const UP=[[0,0,0]];
+  const DOWN=[[180,0,0],[145,0,0],[0,180,-90],[0,150,-80]];
+  const FWD=[[150,0,0],[120,0,0],[90,0,0],[95,0,35],[180,0,0]];
+  const F3=[e(4),e(-8),e(-22)];
+
+  const POSES={
+    A:{d:"Poing fermé, pouce dressé contre le côté de l'index.", v:[{f:[FIST,FIST,FIST,FIST],t:T_SIDE,rots:UP},{f:[FIST,FIST,FIST,FIST],t:T_UP,rots:UP}]},
+    B:{d:"Main à plat, doigts tendus et serrés vers le haut, pouce replié dans la paume.", v:[{f:[EXT,EXT,EXT,EXT],t:T_PALM,rots:UP}]},
+    C:{d:"Main arrondie en forme de C, vue de profil.", v:[{f:[CURVE,CURVE,CURVE,CURVE],t:{d:[0.45,0.45,0.77],c:[-0.3,1,0.2],b:[18,18]},rots:[[0,60,0],[0,30,0]]}]},
+    D:{d:"Index dressé ; les autres doigts rejoignent le pouce en formant un rond (vu de profil).", v:[{f:[EXT,OTL,OTL,OTL],t:{ref:[12],off:[0.03,-0.03,0.02]},rots:[[0,60,0],[0,30,0],[0,85,0]]}]},
+    E:{d:"Doigts repliés en griffe, le bout des doigts posé sur le pouce replié.", v:[{f:[CLAW,CLAW,CLAW,CLAW],t:{to:[0.38,0.94,0.47]},rots:UP}]},
+    F:{d:"Index plié vers l'avant, le pouce dressé contre lui ; les trois autres doigts tendus et écartés.", v:[{f:[[65,25,20,0],F3[0],F3[1],F3[2]],t:{to:[0.23,1.07,0.49]},rots:UP}]},
+    G:{d:"Poing fermé, index dressé, pouce replié devant les autres doigts.", v:[{f:[EXT,FIST,FIST,FIST],t:T_OVERG,rots:UP},{f:[EXT,FIST,FIST,FIST],t:T_OVER,rots:UP}]},
+    H:{d:"Index et auriculaire dressés ; le pouce tient le majeur et l'annulaire repliés.", v:[{f:[EXT,FIST,FIST,e(-8)],t:T_OVER_R,rots:UP}]},
+    I:{d:"Poing fermé, auriculaire dressé.", v:[{f:[FIST,FIST,FIST,e(-6)],t:T_OVER,rots:UP}]},
+    J:{d:"Comme le I, puis l'auriculaire dessine un J dans l'air.", motion:true, v:[{f:[FIST,FIST,FIST,e(-6)],t:T_OVER,rots:UP}]},
+    K:{d:"Index dressé, majeur incliné vers l'avant, le pouce touche le majeur.", v:[{f:[e(4),[52,10,8,0],FIST,FIST],t:{ref:[10],off:[0.04,-0.05,-0.02]},rots:UP}]},
+    L:{d:"Index dressé et pouce écarté : la forme d'un L.", v:[{f:[EXT,FIST,FIST,FIST],t:T_OUT,rots:UP}]},
+    M:{d:"Index, majeur et annulaire tendus vers le bas, dos de la main visible.", v:[{f:[EXT,EXT,EXT,FIST],t:{ref:[20],off:[0.03,0.06,0.12]},rots:DOWN},{f:[BENT,BENT,BENT,BENT],t:T_PAR,rots:[[0,180,-90],[180,0,0]]}]},
+    N:{d:"Index et majeur tendus vers le bas, dos de la main visible.", v:[{f:[e(-4),e(3),FIST,FIST],t:T_OVER_R,rots:DOWN},{f:[BENT,BENT,FIST,FIST],t:T_PAR,rots:[[0,180,-90],[180,0,0]]}]},
+    O:{d:"Tous les doigts rejoignent le pouce en formant un O (vu de profil).", v:[{f:[OT,OT,OT,OT],t:{ref:[8,12],off:[0.02,-0.03,0.02]},rots:[[0,60,0],[0,25,0]]}]},
+    P:{d:"Comme le K, mais la main dirigée vers l'avant et le bas, paume vers le sol.", v:[{f:[e(4),[52,10,8,0],FIST,FIST],t:{ref:[10],off:[0.04,-0.05,-0.02]},rots:FWD}]},
+    Q:{d:"Index et pouce tendus qui pointent vers le bas, paume vers le sol.", v:[{f:[EXT,FIST,FIST,FIST],t:T_PAR,rots:FWD},{f:[e(-4),e(3),FIST,FIST],t:T_PAR,rots:[[90,0,0],[120,0,0]]}]},
+    R:{d:"Index et majeur dressés et croisés.", v:[{f:[[14,6,6,-13],[8,8,8,9],FIST,FIST],t:T_OVER_R,rots:UP}]},
+    S:{d:"Poing fermé, pouce passé devant les doigts.", v:[{f:[FIST,FIST,FIST,FIST],t:T_OVER,rots:UP}]},
+    T:{d:"Index plié vers l'avant, le pouce écarté sur le côté ; les trois autres doigts tendus.", v:[{f:[[62,40,25,-12],e(2),e(-6),e(-18)],t:{to:[0.63,1.08,0.36]},rots:UP}]},
+    U:{d:"Index et majeur dressés et collés.", v:[{f:[e(-5),e(3),FIST,FIST],t:T_OVER_R,rots:UP}]},
+    V:{d:"Index et majeur dressés, écartés en V.", v:[{f:[e(12),e(-10),FIST,FIST],t:T_OVER_R,rots:UP}]},
+    W:{d:"Index, majeur et annulaire dressés et écartés.", v:[{f:[e(13),e(0),e(-12),FIST],t:{ref:[20],off:[0.03,0.06,0.12]},rots:UP}]},
+    X:{d:"Poing fermé, index plié en crochet.", v:[{f:[HOOK,FIST,FIST,FIST],t:T_OVER_R,rots:UP},{f:[[8,88,70,0],FIST,FIST,FIST],t:T_OVER,rots:UP}]},
+    Y:{d:"Pouce et auriculaire écartés, les autres doigts repliés.", v:[{f:[FIST,FIST,FIST,e(-20)],t:T_OUT,rots:UP}]},
+    Z:{d:"Index tendu : il dessine un Z dans l'air.", motion:true, v:[{f:[EXT,FIST,FIST,FIST],t:T_OVER,rots:UP}]}
+  };
+  // Repères 3D (unité : 0,1 mm) mesurés sur des photos de référence de l'alphabet LSF (Wikimedia Commons, « LSF LettreX.jpg »)
+  const REAL={"A":[-55,805,122,-308,565,-30,-450,297,-17,-660,-3,25,-844,-254,193,-287,-46,6,-199,-167,-220,-207,-61,-291,-258,176,-229,-44,-46,50,18,-201,-318,-68,35,-432,-98,184,-187,191,8,5,197,-135,-291,99,87,-380,58,259,-254,299,145,-40,355,-21,-207,299,85,-364,197,237,-286],"B":[-46,924,-350,-296,669,-359,-247,338,-397,-31,45,-422,304,-46,-307,-270,-31,35,-221,-336,-6,-216,-599,-13,-247,-807,-144,-44,-40,70,-2,-457,51,-47,-738,-23,-38,-998,-96,187,0,-13,209,-358,-76,155,-601,-187,90,-817,-294,276,131,-122,330,-126,-116,334,-372,-220,314,-537,-281],"C":[-107,899,42,135,721,188,396,565,315,637,391,494,879,223,615,130,-34,286,243,-306,271,401,-438,218,562,-425,45,-29,-65,69,118,-471,38,318,-516,-23,531,-435,-125,-83,-22,-188,-16,-351,-251,224,-496,-283,449,-433,-358,-142,141,-381,-44,-145,-404,141,-374,-429,318,-384,-439],"D":[-534,684,214,-523,366,320,-555,116,406,-607,-132,523,-629,-396,687,12,-92,266,114,-343,216,153,-579,164,132,-801,-15,53,-20,59,-83,-393,-18,-374,-470,11,-558,-391,112,2,44,-172,-161,-254,-209,-417,-328,-107,-611,-273,4,-155,148,-339,-241,-80,-351,-433,-285,-282,-601,-250,-186],"E":[-153,888,289,-392,625,105,-572,427,-3,-693,207,-203,-525,44,-340,-313,-55,8,-249,-323,-87,-232,-366,-290,-322,-149,-562,-40,-55,49,80,-421,-166,-59,-341,-460,-110,-150,-524,224,17,-7,240,-281,-185,148,-217,-418,67,-46,-534,309,173,-53,410,-83,-92,333,-147,-291,206,-3,-451],"F":[-236,746,-48,-400,516,-45,-354,242,-127,-342,-29,-192,-360,-219,-172,-195,-18,85,-278,-185,-105,-432,-216,-209,-605,-163,-473,-26,-38,67,-45,-362,1,-144,-663,-103,-262,-929,-298,146,4,-47,276,-278,-38,312,-632,-89,318,-927,-192,153,129,-151,418,4,-130,620,-172,-125,767,-363,-139],"G":[-203,829,-12,-376,538,-103,-446,281,-159,-467,-26,-216,-297,-247,-264,-239,-79,43,-180,-383,24,-137,-584,-83,-113,-766,-293,-39,-50,64,-1,-225,-256,-152,-30,-423,-181,171,-293,175,38,-16,130,-81,-306,-9,111,-402,-53,294,-291,231,196,-107,295,25,-273,201,101,-420,114,248,-360],"H":[-120,894,-230,-317,608,-301,-286,299,-367,-154,12,-405,121,-164,-383,-244,-56,23,-238,-361,58,-197,-579,20,-194,-779,-168,-47,-39,74,17,-313,-203,-50,-127,-365,-79,61,-298,173,15,-5,192,-123,-282,83,36,-380,-2,249,-328,251,155,-96,320,-72,-131,368,-329,-182,398,-542,-260],"I":[-617,630,-197,-623,308,-301,-412,79,-359,-132,-85,-377,194,-56,-322,-196,-190,13,-56,-290,-186,-101,-176,-283,-235,-25,-240,-8,-69,67,168,-195,-251,3,-39,-362,-101,58,-192,146,102,-2,261,22,-273,92,121,-372,-85,235,-272,141,289,-61,350,150,-103,535,10,-162,676,-118,-209],"K":[-343,758,-197,-488,424,-295,-351,137,-341,-175,-153,-368,-26,-413,-310,-252,-220,21,-161,-488,40,-50,-735,29,36,-959,-123,-36,-69,76,130,-362,-48,215,-633,-233,348,-884,-405,163,121,-13,69,50,-293,-112,234,-401,-238,454,-334,213,317,-117,204,235,-346,31,328,-499,-88,491,-395],"L":[-188,798,462,-404,510,262,-577,258,214,-787,-15,158,-965,-192,205,-268,-117,43,-206,-448,-15,-188,-671,-101,-179,-845,-315,-34,-68,36,47,-233,-291,-118,-38,-428,-195,160,-294,189,77,-23,116,13,-316,-53,217,-344,-118,413,-177,246,271,-43,272,160,-250,153,249,-362,30,393,-271],"M":[748,96,486,539,-150,349,251,-315,290,9,-325,150,-225,-224,-24,-35,-164,-44,-268,-179,-116,-497,-190,50,-718,-184,164,-11,-1,-23,-401,-17,-59,-663,-4,49,-882,-48,214,-17,125,20,-293,91,18,-502,112,130,-720,67,288,73,254,153,-169,257,146,-398,201,197,-516,186,243],"N":[831,171,385,627,-52,282,315,-269,311,73,-362,258,-115,-248,169,-72,-162,15,-334,-181,-3,-540,-209,142,-803,-171,192,-41,3,-3,-384,-52,92,-634,-38,102,-885,-78,190,29,109,-8,-95,1,194,-16,-19,431,52,-113,630,150,296,89,91,194,238,91,59,428,202,22,553],"O":[307,776,148,475,483,249,606,220,309,629,-77,357,597,-281,320,73,-109,255,94,-337,183,239,-400,174,388,-304,103,-49,-50,58,-54,-351,-46,212,-399,-97,417,-305,-5,-66,55,-166,-84,-239,-242,190,-305,-248,431,-240,-209,-44,222,-338,-25,-25,-370,166,-190,-373,358,-203,-328],"P":[-346,-121,531,-398,-33,190,-351,80,47,-113,115,-141,26,169,-271,-32,-37,-126,-14,124,-167,93,316,-207,246,536,-263,33,-39,13,132,70,-101,329,300,-232,510,594,-171,6,38,69,88,93,-19,220,327,-46,355,540,-58,5,29,218,-15,90,169,96,229,138,212,426,143],"Q":[404,-275,735,450,-87,437,338,54,291,175,140,14,-19,251,-93,150,22,-95,39,108,-164,-124,344,-136,-328,602,-148,17,3,-26,-91,52,-147,-295,371,-278,-458,751,-266,-85,-12,64,-23,60,109,83,116,307,151,99,479,-81,-2,213,-46,71,237,41,112,360,33,142,374],"R":[-129,965,11,-355,682,-120,-338,410,-299,-193,122,-459,80,-76,-518,-261,-83,14,-200,-370,-39,-135,-605,-41,-59,-843,-181,-43,-56,65,-9,-446,-27,-57,-691,-172,-56,-903,-315,170,29,6,163,-149,-253,32,6,-390,-34,212,-383,265,217,-55,270,52,-263,156,122,-418,74,306,-377],"S":[-196,878,-393,-356,563,-439,-298,237,-458,-152,-69,-447,139,-261,-394,-244,-86,24,-231,-290,-150,-245,-203,-259,-287,3,-242,-44,-44,85,24,-331,-155,-78,-172,-355,-80,-1,-244,175,32,0,189,-187,-265,75,-29,-399,18,164,-313,259,166,-130,304,-34,-301,207,18,-473,115,190,-420],"T":[-311,759,-85,-436,529,-66,-425,241,-21,-443,-45,45,-552,-298,248,-160,-23,118,-183,-190,-64,-267,-216,-188,-416,-180,-440,-12,-33,70,7,-373,15,-87,-654,-141,-202,-908,-328,113,-1,-78,187,-293,-105,196,-650,-170,180,-942,-209,99,106,-204,346,-23,-227,515,-233,-252,648,-425,-276],"U":[-123,922,-271,-348,648,-327,-262,360,-428,-80,35,-453,236,-132,-386,-269,-71,16,-238,-363,-8,-191,-615,-10,-155,-858,-106,-50,-46,78,3,-465,39,-42,-741,-33,-39,-984,-117,165,22,7,181,-158,-269,64,-8,-408,-9,196,-398,263,187,-91,291,2,-314,174,63,-495,107,225,-441],"V":[-245,881,71,-444,601,-167,-328,354,-305,-114,87,-434,169,-59,-396,-263,-151,-49,-266,-432,-81,-229,-673,-101,-198,-912,-283,-34,-60,51,156,-462,28,212,-726,-56,328,-966,-124,172,66,47,243,-72,-201,117,58,-362,30,252,-370,252,273,13,268,120,-197,157,185,-321,73,362,-293],"W":[-168,969,-194,-394,716,-334,-286,442,-424,-40,121,-454,237,-65,-330,-271,-44,-63,-272,-353,-101,-226,-585,-133,-214,-773,-214,-48,-66,49,31,-497,77,-9,-767,48,6,-1040,13,201,19,55,262,-321,-54,262,-582,-174,242,-810,-350,285,187,42,344,-7,-145,291,82,-313,217,230,-378],"X":[-218,882,-102,-403,582,-251,-321,342,-370,-96,80,-414,189,-70,-381,-269,-99,-39,-270,-372,-78,-224,-530,-154,-233,-525,-336,-54,-58,52,109,-446,36,123,-587,-199,50,-535,-329,187,44,50,335,-218,-133,278,-196,-355,148,-54,-492,287,207,4,348,75,-163,238,130,-309,101,287,-359],"Y":[-331,746,20,-469,444,-74,-539,138,-44,-688,-178,69,-869,-461,223,-255,-121,47,-143,-222,-182,-185,-93,-276,-287,136,-206,-36,-63,62,88,-167,-279,-60,48,-395,-148,231,-242,189,60,-17,241,-21,-304,78,131,-402,-39,331,-351,235,227,-83,402,48,-115,506,-162,-209,512,-330,-325],"J":[-695,466,6,-652,118,-75,-517,-212,-62,-384,-542,53,-310,-833,222,-143,-253,15,58,-259,-201,-68,-123,-307,-294,22,-199,2,-71,55,187,-58,-311,-75,76,-402,-291,154,-250,112,173,-9,239,137,-296,30,202,-379,-192,292,-303,57,347,-49,338,317,-92,547,181,-193,729,72,-309],"Z":[-281,797,-156,-423,454,-247,-342,111,-272,-223,-225,-306,0,-467,-269,-241,-169,26,-182,-443,-35,-143,-653,-115,-83,-814,-295,-35,-60,68,-9,-232,-242,-191,-64,-356,-150,81,-135,146,99,2,111,-45,-335,-46,177,-397,-25,328,-189,228,302,-123,216,200,-345,50,342,-446,66,452,-266]};
+  // Main ouverte (cinq doigts tendus) : ce n'est pas une lettre -> classe neutre « _ » pour ne rien écrire au repos
+  const NEUTRAL=[
+    {f:[e(10),e(2),e(-8),e(-20)],t:T_OUT,rots:[[0,0,0],[0,0,28],[0,0,-28],[0,180,0],[25,0,0],[-25,0,0],[0,0,60],[0,0,90],[-25,0,90]]},
+    {f:[EXT,EXT,EXT,EXT],t:T_OUT,rots:[[0,0,0],[0,180,0]]},
+    {f:[e(10),e(2),e(-8),e(-20)],t:T_PAR,rots:[[0,0,0],[0,35,0],[0,-35,0]]},
+    {f:[[18,22,14,8],[18,22,14,2],[18,22,14,-6],[18,22,14,-16]],t:T_OUT,rots:[[0,0,0],[0,0,25],[0,0,-25]]}
+  ];
+  const LETTERS='ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+  const STATIC=LETTERS.filter(L=>!POSES[L].motion);
+
+  function rotToward(v,c,ang){
+    const cp=sub(c,mul(v,dot(c,v))); if(len(cp)<1e-6) return v;
+    const ee=norm(cp); return norm(add(mul(v,Math.cos(ang)),mul(ee,Math.sin(ang))));
+  }
+  // Construit les 21 points (ordre MediaPipe) dans le repère « observateur »
+  function buildHand(pose,rot,R,k){
+    const g=R?()=>R.g()*(k||1):()=>0;
+    const pts=new Array(21); pts[0]=[0,0,0];
+    const ls=1+0.06*g();
+    for(let f=0;f<4;f++){
+      const sp=pose.f[f]; const curled=sp[0]+sp[1]+sp[2]>60;
+      const ang=[sp[0]+(curled?8*g():6*g()), sp[1]+(curled?9*g():5*g()), sp[2]+(curled?8*g():5*g())];
+      const a=(GEO.splay[f]+(sp[3]||0)+3*g())*DEG;
+      const u=[Math.sin(a),Math.cos(a),0];
+      let pos=[GEO.mcp[f][0]+0.015*g(),GEO.mcp[f][1]+0.015*g(),0];
+      pts[5+f*4]=pos; let th=0;
+      for(let j=0;j<3;j++){
+        th+=ang[j]*DEG;
+        const dir=[u[0]*Math.cos(th),u[1]*Math.cos(th),Math.sin(th)];
+        pos=add(pos,mul(dir,GEO.len[f][j]*ls*(1+0.04*g())));
+        pts[6+f*4+j]=pos;
+      }
+    }
+    const t=pose.t, TL=GEO.tlen.map(x=>x*ls);
+    let d1=norm(t.d||[0.4,0.62,0.68]); const c=t.c||[-1,0.3,0]; const b=t.b||[35,25];
+    if(R){ d1=norm([d1[0]+0.1*g(),d1[1]+0.1*g(),d1[2]+0.1*g()]); }
+    const p0=GEO.cmc.slice();
+    const d2=rotToward(d1,c,(b[0]+(R?7*g():0))*DEG), d3=rotToward(d2,c,(b[1]+(R?7*g():0))*DEG);
+    let ch=[p0,add(p0,mul(d1,TL[0]))]; ch.push(add(ch[1],mul(d2,TL[1]))); ch.push(add(ch[2],mul(d3,TL[2])));
+    let target=null;
+    if(t.to) target=t.to.slice();
+    else if(t.ref){ target=[0,0,0]; for(const i of t.ref) target=add(target,pts[i]); target=mul(target,1/t.ref.length); target=add(target,t.off||[0,0,0]); }
+    if(target){
+      if(R) target=[target[0]+0.05*g(),target[1]+0.05*g(),target[2]+0.05*g()];
+      const tot=TL[0]+TL[1]+TL[2];
+      if(dist(p0,target)>tot*0.995){ const dd=norm(sub(target,p0)); ch=[p0,add(p0,mul(dd,TL[0])),add(p0,mul(dd,TL[0]+TL[1])),add(p0,mul(dd,tot))]; }
+      else for(let it=0;it<14;it++){
+        ch[3]=target.slice();
+        for(let i=2;i>=1;i--) ch[i]=add(ch[i+1],mul(norm(sub(ch[i],ch[i+1])),TL[i]));
+        ch[0]=p0;
+        for(let i=0;i<3;i++) ch[i+1]=add(ch[i],mul(norm(sub(ch[i+1],ch[i])),TL[i]));
+      }
+    }
+    for(let i=0;i<4;i++) pts[1+i]=ch[i];
+    const r=rot||[0,0,0];
+    const M=rotMat(r[0]+(R?11*g():0),r[1]+(R?13*g():0),r[2]+(R?11*g():0));
+    return pts.map(p=>applyM(M,p));
+  }
+  const toMP=pts=>pts.map(p=>[p[0],-p[1],-p[2]]);   // repère MediaPipe : y vers le bas, z qui s'éloigne de la caméra
+
+  // ---- Caractéristiques (invariantes par symétrie gauche/droite, par échelle et par position)
+  function frame(P){
+    const s=dist(P[0],P[9])||1e-6;
+    const u=norm(sub(P[9],P[0]));
+    const l0=sub(P[5],P[17]);
+    const l=norm(sub(l0,mul(u,dot(l0,u))));
+    let n=cross(u,l), sg=0;
+    for(const [m,t] of [[5,8],[9,12],[13,16],[17,20]]) sg+=dot(sub(P[t],P[m]),n);
+    sg+=dot(sub(P[4],P[0]),n)+dot(sub(P[2],P[0]),n);
+    if(sg<0) n=mul(n,-1);
+    return {s,u,l,n};
+  }
+  function straightness(P){
+    const out=[];
+    for(const b of [5,9,13,17]){
+      const L=dist(P[b],P[b+1])+dist(P[b+1],P[b+2])+dist(P[b+2],P[b+3]);
+      out.push(dist(P[b],P[b+3])/(L||1e-6));
+    }
+    out.push(dist(P[2],P[4])/((dist(P[2],P[3])+dist(P[3],P[4]))||1e-6));
+    return out;
+  }
+  function features(P){
+    const {s,u,l,n}=frame(P);
+    const loc=p=>{const d=sub(p,P[0]);return [dot(d,l)/s,dot(d,u)/s,dot(d,n)/s];};
+    const v=[];
+    const tips=[4,8,12,16,20].map(i=>loc(P[i]));
+    for(const t of tips) v.push(t[0],t[1],t[2]);
+    for(const i of [3,6,10,14,18]){const q=loc(P[i]); v.push(q[0]*0.6,q[1]*0.6,q[2]*0.6);}
+    const st=straightness(P);
+    for(let i=0;i<4;i++) v.push(st[i]*2.2);
+    v.push(st[4]*0.8);
+    for(const i of [8,12,16,20,6,10,14,5,17]) v.push(Math.min(1.6,dist(P[4],P[i])/s));
+    v.push(Math.min(1.2,dist(P[8],P[12])/s)*1.6, Math.min(1.2,dist(P[12],P[16])/s)*1.6, Math.min(1.2,dist(P[16],P[20])/s)*1.4);
+    v.push((tips[1][0]-tips[2][0])*2.5);
+    v.push(Math.abs(u[0])*1.3,u[1]*1.3,u[2]*1.0);
+    v.push(Math.abs(n[0])*0.5,n[1]*0.5,n[2]*0.5);
+    return v;
+  }
+  const FEATURE_VERSION=1;
+
+  function synthSamples(n,seed,k){
+    const R=rng(seed||12345), out=[];
+    for(const L of STATIC){
+      for(const pv of POSES[L].v) for(const r of pv.rots){
+        out.push({c:L,v:features(toMP(buildHand(pv,r,null))),w:1});
+        for(let i=0;i<n;i++) out.push({c:L,v:features(toMP(buildHand(pv,r,R,k||1))),w:1});
+      }
+    }
+    for(const pv of NEUTRAL) for(const r of pv.rots){
+      out.push({c:'_',v:features(toMP(buildHand(pv,r,null))),w:1.15});   // légèrement pénalisée : ne doit pas « voler » T, F, B ou W
+      for(let i=0;i<n;i++) out.push({c:'_',v:features(toMP(buildHand(pv,r,R,k||1))),w:1.15});
+    }
+    return out;
+  }
+
+  function realSamples(n,seed,stills){   // stills : poses fixes de J et Z (utilisées seulement pour les images fixes)
+    const R=rng(seed||7), out=[];
+    for(const L in REAL){
+      if(STATIC.includes(L)===!!stills) continue;
+      const a=REAL[L], P=[]; for(let i=0;i<21;i++) P.push([a[i*3]/1e4,a[i*3+1]/1e4,a[i*3+2]/1e4]);
+      const s=dist(P[0],P[9]);
+      out.push({c:L,v:features(P),w:0.92});
+      for(let k=0;k<n;k++){
+        const M=rotMat(9*R.g(),9*R.g(),9*R.g());
+        out.push({c:L,v:features(P.map(p=>{const q=applyM(M,p);return [q[0]+0.03*s*R.g(),q[1]+0.03*s*R.g(),q[2]+0.03*s*R.g()];})),w:0.92});
+      }
+    }
+    return out;
+  }
+
+  // ---- Classifieur : plus proches voisins (moyenne des 3 plus proches par lettre)
+  const SIG=0.5, DGOOD=1.5, DMAX=3.4;
+  function makeModel(){
+    let synth=[], user=[], all=[], stills=[];
+    const rebuild=()=>{all=synth.concat(user);};
+    return {
+      setSynth(list){synth=list;rebuild();},
+      setUser(map){user=[];for(const c in map)for(const v of map[c])user.push({c,v,w:0.7,u:1});rebuild();},
+      setStills(list){stills=list;},
+      count(){return all.length;},
+      classify(v,useStills){
+        const best={};
+        for(const s of (useStills?all.concat(stills):all)){
+          let d=0;const sv=s.v;
+          for(let i=0;i<v.length;i++){const q=v[i]-sv[i];d+=q*q;}
+          d=Math.sqrt(d)*s.w;
+          const b=best[s.c]||(best[s.c]=[]);
+          if(b.length<3||d<b[b.length-1].d){b.push({d,u:s.u?1:0});b.sort((x,y)=>x.d-y.d);if(b.length>3)b.pop();}
+        }
+        const sc={},uf={};let dmin=1e9;
+        for(const c in best){const b=best[c];let m=0,u=0;for(const x of b){m+=x.d;u+=x.u;}m/=b.length;sc[c]=m;uf[c]=u/b.length;if(m<dmin)dmin=m;}
+        let Z=0;const p={};
+        // les exemples enregistrés par l'utilisateur l'emportent en cas d'égalité
+        for(const c in sc){p[c]=Math.exp(-(sc[c]*sc[c]-dmin*dmin)/(2*SIG*SIG))*(1+3*uf[c]);Z+=p[c];}
+        const q=clamp((DMAX-dmin)/(DMAX-DGOOD),0,1);
+        for(const c in p)p[c]=p[c]/Z*q;
+        return {p,dmin,q};
+      }
+    };
+  }
+
+  // ---- Mouvement (J et Z) : trajectoire du bout du doigt, en « longueurs de paume »
+  function rdp(pts,eps){
+    if(pts.length<3) return pts.slice();
+    const a=pts[0],b=pts[pts.length-1];let imax=0,dmax=0;
+    const dx=b.x-a.x,dy=b.y-a.y,L=Math.hypot(dx,dy)||1e-9;
+    for(let i=1;i<pts.length-1;i++){const d=Math.abs((pts[i].x-a.x)*dy-(pts[i].y-a.y)*dx)/L;if(d>dmax){dmax=d;imax=i;}}
+    if(dmax<=eps) return [a,b];
+    const left=rdp(pts.slice(0,imax+1),eps), right=rdp(pts.slice(imax),eps);
+    return left.slice(0,-1).concat(right);
+  }
+  // lissage (moyenne glissante) pour ignorer le tremblement des points détectés
+  function smooth(tr,w){
+    const out=[];
+    for(let i=0;i<tr.length;i++){
+      let x=0,y=0,sa=0,ca=0,n=0;
+      for(let j=Math.max(0,i-w);j<=Math.min(tr.length-1,i+w);j++){x+=tr[j].x;y+=tr[j].y;sa+=Math.sin(tr[j].a||0);ca+=Math.cos(tr[j].a||0);n++;}
+      out.push({t:tr[i].t,x:x/n,y:y/n,a:Math.atan2(sa,ca)});
+    }
+    return out;
+  }
+  function detectZ(tr){
+    if(tr.length<8) return false;
+    tr=smooth(tr,2);
+    const p=rdp(tr,0.14);
+    const horiz=s=>Math.abs(s.dx)>=0.45&&Math.abs(s.dy)<=0.65*Math.abs(s.dx);
+    for(let i=0;i+3<p.length;i++){
+      const a={dx:p[i+1].x-p[i].x,dy:p[i+1].y-p[i].y},b={dx:p[i+2].x-p[i+1].x,dy:p[i+2].y-p[i+1].y},c={dx:p[i+3].x-p[i+2].x,dy:p[i+3].y-p[i+2].y};
+      if(horiz(a)&&horiz(c)&&Math.sign(a.dx)===Math.sign(c.dx)&&b.dy>0.35&&Math.sign(b.dx)===-Math.sign(a.dx)&&Math.abs(b.dx)>0.25) return true;
+    }
+    return false;
+  }
+  function detectJ(tr){
+    if(tr.length<8) return false;
+    tr=smooth(tr,3);
+    let k=0;for(let i=1;i<tr.length;i++) if(tr[i].y>tr[k].y) k=i;
+    let j=0;for(let i=0;i<=k;i++) if(tr[i].y<tr[j].y) j=i;
+    const descent=tr[k].y-tr[j].y, end=tr[tr.length-1];
+    const hook=Math.abs(end.x-tr[j].x), rise=tr[k].y-end.y;
+    // le trait descendant doit être net (pas un tremblement) : chemin parcouru proche de la ligne droite
+    let pjk=0;for(let i=j+1;i<=k;i++) pjk+=Math.hypot(tr[i].x-tr[i-1].x,tr[i].y-tr[i-1].y);
+    const clean=pjk<=1.7*Math.hypot(tr[k].x-tr[j].x,tr[k].y-tr[j].y)+0.05;
+    if(clean&&descent>=0.45&&hook>=0.35&&rise>=0.04&&Math.abs(tr[k].x-tr[j].x)<=1.2*descent) return true;
+    // ou bien rotation franche du poignet (l'auriculaire décrit un arc)
+    let rot=Math.abs(end.a-tr[0].a);if(rot>Math.PI)rot=2*Math.PI-rot;
+    const net=Math.hypot(end.x-tr[0].x,end.y-tr[0].y);
+    if(rot>=50*DEG&&net>=0.5) return true;
+    return false;
+  }
+
+  return {POSES,LETTERS,STATIC,buildHand,toMP,features,frame,straightness,synthSamples,realSamples,makeModel,detectZ,detectJ,rng,FEATURE_VERSION,norm,sub,cross,dot};
+})();
+if(typeof module!=='undefined') module.exports=LSF;
+</script>
+
+<!-- ===================== APPLICATION ===================== -->
+<script>
+'use strict';
+(function(){
+const $=s=>document.querySelector(s);
+const video=$('#video'), stage=$('#stage'), sctx=stage.getContext('2d');
+const MP_BASE='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+const MODEL_URL='https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+const STORE_SAMPLES='lsf-exemples-v'+LSF.FEATURE_VERSION, STORE_SET='lsf-reglages-v1';
+const CONNECT=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+const FCOL=['#f97316','#22c55e','#06b6d4','#a855f7','#ec4899'];
+
+// ---------- réglages & stockage
+const settings={holdMs:800,autoSpace:true,mirror:true,minConf:0.45,spaceMs:1500};
+try{const sv=JSON.parse(localStorage.getItem(STORE_SET)||'{}');for(const k of ['holdMs','autoSpace','mirror']) if(k in sv) settings[k]=sv[k];}catch(e){}
+const saveSettings=()=>{try{localStorage.setItem(STORE_SET,JSON.stringify(settings));}catch(e){}};
+let userSamples={};
+try{userSamples=JSON.parse(localStorage.getItem(STORE_SAMPLES)||'{}')||{};}catch(e){userSamples={};}
+const saveSamples=()=>{try{localStorage.setItem(STORE_SAMPLES,JSON.stringify(userSamples));}catch(e){}};
+
+// ---------- modèle
+const model=LSF.makeModel();
+model.setSynth(LSF.synthSamples(12,2024,1).concat(LSF.realSamples(10,7)));
+model.setStills(LSF.realSamples(10,11,true));
+model.setUser(userSamples);
+
+// ---------- mot
+let word='';
+const wordEl=$('#word');
+function renderWord(isNew){
+  wordEl.innerHTML='';
+  if(!word){const p=document.createElement('span');p.className='placeholder';p.textContent='Les lettres reconnues s\'écrivent ici…';wordEl.appendChild(p);}
+  [...word].forEach((ch,i)=>{const s=document.createElement('span');s.className='ch'+(ch===' '?' sp':'')+(isNew&&i===word.length-1?' new':'');s.textContent=ch===' '?'\u00a0':ch;wordEl.appendChild(s);});
+  const c=document.createElement('span');c.className='caret';wordEl.appendChild(c);
+  wordEl.setAttribute('aria-label',word?('Mot épelé : '+word):'Aucune lettre pour le moment');
+}
+function appendChar(ch){ if(ch===' '&&(!word||word.endsWith(' '))) return; word+=ch; renderWord(true); }
+function backspace(){ word=word.slice(0,-1); renderWord(false); }
+function clearWord(){ word=''; renderWord(false); }
+renderWord(false);
+
+// ---------- état de reconnaissance
+const pipe={};
+function resetPipe(){
+  Object.assign(pipe,{probs:{},lastT:0,cand:null,candSince:0,committed:null,commitT:0,commitX:0,otherSince:null,lostSince:null,spaceDone:true,
+    trajI:[],trajP:[],shapeLock:null,lockOff:null,cx:null,cy:null,speed:0,lastHandT:0,lastCommit:null,idxSince:null,pkySince:null,idxOff:0,pkyOff:0,candSeen:0});
+}
+resetPipe();
+let allowAutoSpace=true;
+let onCommit=null;
+
+const bigLetter=$('#bigLetter'), confBar=$('#confBar'), confVal=$('#confVal'), holdBar=$('#holdBar'), holdTxt=$('#holdTxt'), altsEl=$('#alts');
+function showLetter(letter,conf,ranked,progress,note){
+  if(letter){ bigLetter.textContent=letter; bigLetter.classList.remove('none'); }
+  else { bigLetter.textContent=note||'–'; bigLetter.classList.add('none'); }
+  const pc=Math.round((conf||0)*100);
+  confBar.style.width=pc+'%';
+  confBar.style.background=pc>=75?'var(--ok)':pc>=50?'#ca8a04':'#dc2626';
+  confVal.textContent=conf==null?'—':(pc+' % · '+(pc>=75?'élevée':pc>=50?'moyenne':'faible'));
+  holdBar.style.width=Math.round(clamp01(progress||0)*100)+'%';
+  holdTxt.textContent=progress>=1?'✓ écrite':(progress>0?'maintenez…':'—');
+  if(ranked&&ranked.length){
+    const alt=ranked.slice(1,3).filter(r=>r.p>=0.05).map(r=>'<b>'+r.c+'</b> '+Math.round(r.p*100)+' %');
+    altsEl.innerHTML=alt.length?('Autres possibilités : '+alt.join(' · ')):(letter?'Aucune autre lettre proche.':'Forme non reconnue : ajustez la main ou réapprenez la lettre.');
+  }
+}
+const clamp01=x=>Math.max(0,Math.min(1,x));
+function flashLetter(L){ bigLetter.textContent=L; bigLetter.classList.remove('none','flash'); void bigLetter.offsetWidth; bigLetter.classList.add('flash'); }
+
+function commit(letter,now,replace){
+  if(replace&&word.length&&word[word.length-1]!==' '){ word=word.slice(0,-1); }
+  appendChar(letter); flashLetter(letter);
+  pipe.lastCommit={letter,now,isStatic:!replace&&letter!=='J'&&letter!=='Z'};
+  if(onCommit) onCommit(letter);
+}
+
+// ---------- apprentissage
+const train={active:false,phase:null,letter:'A',t0:0,buf:[]};
+
+function processFrame(hand,now){
+  const dt=Math.min(250,Math.max(1,now-pipe.lastT)); pipe.lastT=now;
+  if(!hand){
+    if(pipe.lostSince==null){pipe.lostSince=now;}
+    const lost=now-pipe.lostSince;
+    if(lost>300){pipe.cand=null;pipe.committed=null;pipe.probs={};pipe.trajI=[];pipe.trajP=[];pipe.shapeLock=null;pipe.cx=null;pipe.idxSince=null;pipe.pkySince=null;}
+    if(!train.active&&settings.autoSpace&&allowAutoSpace&&!pipe.spaceDone&&lost>settings.spaceMs&&word&&!word.endsWith(' ')){appendChar(' ');pipe.spaceDone=true;}
+    showLetter(null,null,null,0,'–');
+    altsEl.textContent=word&&settings.autoSpace&&allowAutoSpace&&!pipe.spaceDone?'Main absente : un espace va être ajouté…':'Montrez une main à la caméra.';
+    return;
+  }
+  pipe.lostSince=null; pipe.spaceDone=false;
+  const P=hand.wl; const v=LSF.features(P);
+  if(train.active){ if(train.phase==='record') train.buf.push(v.map(x=>Math.round(x*1000)/1000)); }
+  const r=model.classify(v,source==='images');
+  const a=1-Math.exp(-dt/110);
+  const seen=new Set([...Object.keys(pipe.probs),...Object.keys(r.p)]);
+  for(const c of seen) pipe.probs[c]=(pipe.probs[c]||0)*(1-a)+(r.p[c]||0)*a;
+  const rankedAll=Object.keys(pipe.probs).map(c=>({c,p:pipe.probs[c]})).sort((x,y)=>y.p-x.p);
+  const neutral=!!(rankedAll[0]&&rankedAll[0].c==='_'&&rankedAll[0].p>=0.45);   // main ouverte : pas une lettre
+  const ranked=rankedAll.filter(r=>r.c!=='_');
+  const top=neutral?{c:null,p:0}:ranked[0];
+  // hystérésis : la lettre déjà en cours de validation tolère une confiance un peu plus basse (évite les à-coups)
+  const thr=top&&top.c&&top.c===pipe.cand?settings.minConf-0.12:settings.minConf;
+  const letter=!neutral&&top&&top.p>=thr?top.c:null;
+
+  // position / vitesse de la main (en longueurs de paume, dans l'image)
+  const lm=hand.lm, A=hand.aspect;
+  const d2=(i,j)=>Math.hypot((lm[i].x-lm[j].x)*A,lm[i].y-lm[j].y);
+  const scale=Math.max(d2(0,9),d2(0,5),d2(0,17),1.3*d2(5,17),1e-4);
+  const cx=(lm[0].x+lm[5].x+lm[17].x)/3*A/scale, cy=(lm[0].y+lm[5].y+lm[17].y)/3/scale;
+  if(pipe.cx!=null){const sp=Math.hypot(cx-pipe.cx,cy-pipe.cy)/(dt/1000);pipe.speed=pipe.speed*0.6+sp*0.4;}else pipe.speed=0;
+  pipe.cx=cx;pipe.cy=cy;
+  const moving=pipe.speed>1.6;
+
+  if(train.active){ showLetter(letter,top?top.p:0,ranked,0); return; }
+
+  // lettres en mouvement
+  const st=LSF.straightness(P);
+  const idxOnly=st[0]>0.86&&st[1]<0.78&&st[2]<0.78&&st[3]<0.78;
+  const pkyOnly=st[3]>0.86&&st[0]<0.78&&st[1]<0.78&&st[2]<0.78;
+  const ang=Math.atan2(lm[9].y-lm[0].y,(lm[9].x-lm[0].x)*A);
+  const upd=(tr,on,tip)=>{ if(on){tr.push({t:now,x:lm[tip].x*A/scale,y:lm[tip].y/scale,a:ang});while(tr.length&&now-tr[0].t>1900)tr.shift();} else if(tr.length&&now-tr[tr.length-1].t>250) tr.length=0; };
+  upd(pipe.trajI,idxOnly,8); upd(pipe.trajP,pkyOnly,20);
+  // depuis quand la forme « index seul » / « auriculaire seul » est tenue sans interruption
+  if(idxOnly){ if(pipe.idxSince==null) pipe.idxSince=now; pipe.idxOff=now; } else if(now-pipe.idxOff>300) pipe.idxSince=null;
+  if(pkyOnly){ if(pipe.pkySince==null) pipe.pkySince=now; pipe.pkyOff=now; } else if(now-pipe.pkyOff>300) pipe.pkySince=null;
+  if(pipe.shapeLock){
+    const still=pipe.shapeLock==='index'?idxOnly:pkyOnly;
+    if(still) pipe.lockOff=null; else { if(pipe.lockOff==null) pipe.lockOff=now; if(now-pipe.lockOff>400) pipe.shapeLock=null; }
+  }
+  let motion=null;
+  if(idxOnly&&LSF.detectZ(pipe.trajI)) motion='Z';
+  else if(pkyOnly&&LSF.detectJ(pipe.trajP)) motion='J';
+  if(motion){
+    // si la forme de départ vient d'être écrite comme lettre fixe (G avant Z, I avant J), le mouvement la remplace
+    const lc=pipe.lastCommit, since=motion==='Z'?pipe.idxSince:pipe.pkySince;
+    const rep=!!(lc&&lc.isStatic&&since!=null&&lc.now>=since&&now-lc.now<8000&&word.endsWith(lc.letter));
+    commit(motion,now,rep);
+    pipe.trajI=[];pipe.trajP=[];pipe.shapeLock=motion==='Z'?'index':'pinky';pipe.lockOff=null;
+    pipe.committed=pipe.cand;pipe.commitT=now;pipe.commitX=cx;
+    showLetter(motion,1,null,1); altsEl.textContent='Lettre en mouvement reconnue.';
+    return;
+  }
+
+  // validation par maintien
+  let progress=0;
+  let hesit=false;
+  if(letter!==pipe.cand){
+    if(pipe.cand&&letter==null&&!neutral&&now-pipe.candSeen<200) hesit=true;      // brève hésitation : on garde la lettre en cours
+    else {pipe.cand=letter;pipe.candSince=now;pipe.candSeen=now;}
+  } else pipe.candSeen=now;
+  if(letter!==pipe.committed){ if(pipe.otherSince==null)pipe.otherSince=now; if(now-pipe.otherSince>350)pipe.committed=null; } else pipe.otherSince=null;
+  if(moving) pipe.candSince=Math.min(now,pipe.candSince+dt);
+  if(letter&&!pipe.shapeLock){
+    if(letter===pipe.committed){
+      progress=1;
+      if(Math.abs(cx-pipe.commitX)>1.0){pipe.committed=null;pipe.candSince=now;progress=0;}
+    }else{
+      progress=(now-pipe.candSince)/settings.holdMs;
+      if(progress>=1){commit(letter,now,false);pipe.committed=letter;pipe.commitT=now;pipe.commitX=cx;pipe.otherSince=null;progress=1;}
+    }
+  }
+  if(hesit&&pipe.cand!==pipe.committed) progress=clamp01((now-pipe.candSince)/settings.holdMs)*0.99;
+  showLetter(pipe.shapeLock&&pipe.lastCommit?pipe.lastCommit.letter:(letter||(hesit?pipe.cand:null)),top?top.p:0,neutral?null:ranked,pipe.shapeLock?1:progress,letter?null:(neutral?'✋':'?'));
+  if(neutral) altsEl.textContent='Main ouverte : aucune lettre. Formez une lettre de l\'alphabet.';
+}
+
+// ---------- dessin de la scène
+function drawStage(src,sw,sh,hand,mirror){
+  const maxW=1280; const k=Math.min(1,maxW/sw); const W=Math.round(sw*k),H=Math.round(sh*k);
+  if(stage.width!==W||stage.height!==H){stage.width=W;stage.height=H;}
+  sctx.save();
+  if(mirror){sctx.translate(W,0);sctx.scale(-1,1);}
+  sctx.drawImage(src,0,0,W,H);
+  if(hand){
+    const lm=hand.lm; const lw=Math.max(3,W/220);
+    sctx.lineCap='round';
+    const seg=(i,j,col,w)=>{sctx.strokeStyle=col;sctx.lineWidth=w;sctx.beginPath();sctx.moveTo(lm[i].x*W,lm[i].y*H);sctx.lineTo(lm[j].x*W,lm[j].y*H);sctx.stroke();};
+    for(const [i,j] of CONNECT) seg(i,j,'rgba(0,0,0,.55)',lw+3);
+    for(const [i,j] of CONNECT){const f=j<=4?0:j<=8?1:j<=12?2:j<=16?3:4;seg(i,j,(i===0&&j===17)||(i>=5&&j>=9&&j-i===4&&i%4===1)?'#ffffff':FCOL[f],lw);}
+    for(let i=0;i<21;i++){sctx.beginPath();sctx.arc(lm[i].x*W,lm[i].y*H,lw*1.25,0,7);sctx.fillStyle=[4,8,12,16,20].includes(i)?'#fde047':'#ffffff';sctx.fill();sctx.lineWidth=1.5;sctx.strokeStyle='#111';sctx.stroke();}
+  }
+  sctx.restore();
+}
+// Conseil de cadrage affiché sur l'image (main trop loin ou coupée par le bord)
+function frameHint(hand){
+  if(!hand) return null;
+  const lm=hand.lm,A=hand.aspect,d=(i,j)=>Math.hypot((lm[i].x-lm[j].x)*A,lm[i].y-lm[j].y);
+  let out=0; for(const p of lm) if(p.x<0.005||p.x>0.995||p.y<0.005||p.y>0.995) out++;
+  if(out>=3) return 'Main coupée par le bord : recentrez-la';
+  if(Math.max(d(0,9),d(0,5),d(0,17),1.3*d(5,17))<0.065) return 'Main trop loin : rapprochez-la';
+  return null;
+}
+function pickHand(res,aspect){
+  if(!res||!res.landmarks||!res.landmarks.length) return null;
+  let best=0,bs=-1;
+  res.landmarks.forEach((lm,i)=>{const s=Math.hypot((lm[9].x-lm[0].x)*aspect,lm[9].y-lm[0].y)+Math.hypot((lm[5].x-lm[17].x)*aspect,lm[5].y-lm[17].y);if(s>bs){bs=s;best=i;}});
+  const lm=res.landmarks[best];
+  const w=(res.worldLandmarks&&res.worldLandmarks[best])||lm.map(p=>({x:p.x*aspect,y:p.y,z:p.z*aspect}));
+  return {lm,wl:w.map(p=>[p.x,p.y,p.z]),aspect};
+}
+
+// ---------- MediaPipe
+let vision=null,fileset=null,modelBuf=null,hlVideo=null,hlImage=null,mpPromise=null;
+const statusEl=$('#status');
+const setStatus=t=>{statusEl.textContent=t;};
+let delegateUsed='GPU',detN=0,detMs=0,switching=false;
+async function makeLandmarker(mode,forceCpu){
+  const mk=d=>vision.HandLandmarker.createFromOptions(fileset,{baseOptions:{modelAssetBuffer:new Uint8Array(modelBuf),delegate:d},runningMode:mode,numHands:2,minHandDetectionConfidence:mode==='IMAGE'?0.25:0.5,minHandPresenceConfidence:mode==='IMAGE'?0.25:0.5,minTrackingConfidence:0.5});
+  if(forceCpu||/[?&]cpu=1/.test(location.search)){ if(mode==='VIDEO') delegateUsed='CPU'; return await mk('CPU'); }
+  try{const h=await mk('GPU'); if(mode==='VIDEO') delegateUsed='GPU'; return h;}
+  catch(e){console.warn('GPU indisponible, passage au CPU',e); if(mode==='VIDEO') delegateUsed='CPU'; return await mk('CPU');}
+}
+function ensureMP(){
+  if(!mpPromise) mpPromise=(async()=>{
+    setStatus('Chargement du détecteur de main (une seule fois)…');
+    vision=await import(MP_BASE+'/vision_bundle.mjs');
+    fileset=await vision.FilesetResolver.forVisionTasks(MP_BASE+'/wasm');
+    const resp=await fetch(MODEL_URL); if(!resp.ok) throw new Error('modèle indisponible');
+    modelBuf=await resp.arrayBuffer();
+    hlVideo=await makeLandmarker('VIDEO');
+    // mise en route (la première détection est lente) et mesure de vitesse : si la carte graphique est trop lente, on utilise le processeur
+    try{
+      const c=document.createElement('canvas');c.width=640;c.height=480;const x=c.getContext('2d');x.fillStyle='#777';x.fillRect(0,0,640,480);
+      hlVideo.detectForVideo(c,nextTs());
+      const t0=performance.now(); hlVideo.detectForVideo(c,nextTs()); hlVideo.detectForVideo(c,nextTs());
+      if(delegateUsed==='GPU'&&(performance.now()-t0)/2>140){ const old=hlVideo; hlVideo=await makeLandmarker('VIDEO',true); try{old.close();}catch(e){} hlVideo.detectForVideo(c,nextTs()); }
+    }catch(e){console.warn(e);}
+    setStatus('Détecteur prêt.');
+  })().catch(e=>{mpPromise=null;throw e;});
+  return mpPromise;
+}
+function nextTs(){let ts=performance.now();if(ts<=lastTs)ts=lastTs+1;lastTs=ts;return ts;}
+async function ensureImageLandmarker(){ await ensureMP(); if(!hlImage) hlImage=await makeLandmarker('IMAGE'); }
+
+// ---------- sources
+let source=null, rafId=0, runToken=0, camStream=null, lastVT=-1, lastTs=0, fpsN=0, fpsT=0, objUrl=null;
+const stageMsg=$('#stageMsg'), badge=$('#handBadge');
+function showMsg(title,text,showStart){ $('#msgTitle').textContent=title; $('#msgText').textContent=text; $('#btnStart').hidden=!showStart; stageMsg.hidden=false; }
+function setBadge(on,txt){ badge.hidden=false; badge.classList.toggle('on',!!on); badge.classList.toggle('warn',!!txt); $('#handBadgeTxt').textContent=txt||(on?'Main détectée':'Aucune main'); }
+function stopAll(){
+  runToken++; cancelAnimationFrame(rafId); rafId=0;
+  if(camStream){camStream.getTracks().forEach(t=>t.stop());camStream=null;}
+  try{video.pause();}catch(e){}
+  video.srcObject=null; video.removeAttribute('src'); try{video.load();}catch(e){}
+  if(objUrl){URL.revokeObjectURL(objUrl);objUrl=null;}
+  source=null; resetPipe(); badge.hidden=true;
+  $('#videoCtl').hidden=true; $('#imgResults').hidden=true; $('#btnStop').hidden=true; $('#fps').textContent='';
+  ['#btnCam','#btnVideo','#btnImages'].forEach(s=>$(s).classList.remove('active'));
+  $('#lblMirror').hidden=false;
+}
+function describeError(e){
+  const n=e&&e.name;
+  if(n==='NotAllowedError'||n==='SecurityError') return 'L\'accès à la caméra a été refusé. Autorisez la caméra pour cette page (icône à gauche de la barre d\'adresse), puis réessayez.';
+  if(n==='NotFoundError'||n==='OverconstrainedError') return 'Aucune caméra n\'a été trouvée. Branchez une webcam, ou utilisez le mode test avec une vidéo ou des images.';
+  if(n==='NotReadableError') return 'La caméra est déjà utilisée par une autre application. Fermez-la puis réessayez.';
+  return 'Impossible de démarrer : '+(e&&e.message||e)+'. Vérifiez la connexion Internet (le détecteur est téléchargé une fois depuis un CDN).';
+}
+function loopVideo(token){
+  const tick=()=>{
+    if(token!==runToken) return;
+    rafId=requestAnimationFrame(tick);
+    if(video.readyState<2||!video.videoWidth) return;
+    if(video.currentTime===lastVT) return;
+    lastVT=video.currentTime;
+    const ts=nextTs();
+    let res=null; const d0=performance.now();
+    try{res=hlVideo.detectForVideo(video,ts);}catch(e){console.error(e);return;}
+    const dEl=performance.now()-d0; detN++; if(detN>4) detMs=detMs?detMs*0.85+dEl*0.15:dEl;
+    if(detN>24&&detMs>120&&delegateUsed==='GPU'&&!switching){   // carte graphique trop lente : on bascule sur le processeur
+      switching=true;
+      makeLandmarker('VIDEO',true).then(h=>{const old=hlVideo;hlVideo=h;detN=0;detMs=0;try{old.close();}catch(e){}}).catch(e=>console.warn(e));
+    }
+    const hand=pickHand(res,video.videoWidth/video.videoHeight);
+    drawStage(video,video.videoWidth,video.videoHeight,hand,source==='camera'&&settings.mirror);
+    setBadge(!!hand,frameHint(hand));
+    processFrame(hand,source==='video'?video.currentTime*1000:ts);
+    if(source==='video'&&video.duration) $('#vidProg').value=video.currentTime/video.duration;
+    fpsN++; if(ts-fpsT>1000){$('#fps').textContent=Math.round(fpsN*1000/(ts-fpsT))+' img/s';fpsN=0;fpsT=ts;}
+  };
+  tick();
+}
+async function startCamera(){
+  stopAll(); const token=runToken;
+  $('#btnCam').classList.add('active');
+  showMsg('Démarrage…','Chargement du détecteur de main et ouverture de la caméra.',false);
+  try{
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia) throw Object.assign(new Error('caméra non disponible dans ce navigateur'),{name:'NotFoundError'});
+    const gum=navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720},facingMode:'user'},audio:false});
+    // Si le détecteur ne se charge pas, la caméra déjà ouverte doit quand même être éteinte.
+    try{ await ensureMP(); }catch(e){ gum.then(s=>s.getTracks().forEach(t=>t.stop()),()=>{}); throw e; }
+    const stream=await gum;
+    if(token!==runToken){stream.getTracks().forEach(t=>t.stop());return;}
+    camStream=stream; video.srcObject=stream; await video.play();
+    source='camera'; allowAutoSpace=true; lastVT=-1; stageMsg.hidden=true; $('#btnStop').hidden=false;
+    setStatus('Caméra active. Montrez une lettre et gardez-la immobile un instant.');
+    loopVideo(token);
+  }catch(e){
+    console.error(e); if(token!==runToken) return;
+    stopAll(); showMsg('La caméra n\'a pas pu démarrer',describeError(e),true); setStatus('Caméra indisponible.');
+  }
+}
+async function startVideoFile(file){
+  stopAll(); const token=runToken;
+  $('#btnVideo').classList.add('active');
+  showMsg('Chargement de la vidéo…',file.name,false);
+  try{
+    await ensureMP(); if(token!==runToken) return;
+    objUrl=URL.createObjectURL(file); video.src=objUrl; video.loop=false; video.muted=true; video.playbackRate=parseFloat($('#selSpeed').value)||1;
+    await new Promise((ok,ko)=>{video.onloadeddata=ok;video.onerror=()=>ko(new Error('format vidéo non pris en charge par ce navigateur (essayez un mp4 H.264)'));});
+    if(token!==runToken) return;
+    source='video'; allowAutoSpace=true; lastVT=-1; clearWord(); resetPipe();
+    stageMsg.hidden=true; $('#videoCtl').hidden=false; $('#btnStop').hidden=false; $('#lblMirror').hidden=true; $('#btnPlay').textContent='⏸ Pause';
+    setStatus('Mode test — vidéo : '+file.name);
+    video.onended=()=>{setStatus('Vidéo terminée : '+file.name+'. Cliquez sur « Rejouer » pour recommencer.');$('#btnPlay').textContent='▶ Lecture';};
+    await video.play();
+    loopVideo(token);
+  }catch(e){
+    console.error(e); if(token!==runToken) return;
+    stopAll(); showMsg('La vidéo n\'a pas pu être lue',String(e&&e.message||e),true);
+  }
+}
+function expectedFromName(name){
+  const base=name.replace(/\.[^.]+$/,'');
+  const m=base.match(/(?:^|[^A-Za-z])([A-Za-z])$/)||base.match(/^([A-Za-z])(?:[^A-Za-z]|$)/);
+  return m?m[1].toUpperCase():null;
+}
+async function startImages(files){
+  files=[...files].filter(f=>/^image\//.test(f.type)||/\.(png|jpe?g|webp|gif|bmp)$/i.test(f.name)).sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true}));
+  if(!files.length) return;
+  stopAll(); const token=runToken;
+  $('#btnImages').classList.add('active');
+  showMsg('Analyse des images…',files.length+' image(s)',false);
+  const box=$('#imgResults'); box.innerHTML='';
+  try{
+    await ensureImageLandmarker(); if(token!==runToken) return;
+    source='images'; allowAutoSpace=false; clearWord(); resetPipe();
+    stageMsg.hidden=true; box.hidden=false; $('#btnStop').hidden=false; $('#lblMirror').hidden=true;
+    let clock=1000, nOk=0, nExp=0;
+    for(let k=0;k<files.length;k++){
+      const f=files[k]; if(token!==runToken) return;
+      setStatus('Mode test — image '+(k+1)+' / '+files.length+' : '+f.name);
+      const url=URL.createObjectURL(f); const img=new Image();
+      try{ await new Promise((ok,ko)=>{img.onload=ok;img.onerror=()=>ko(new Error('image illisible'));img.src=url;}); if(img.decode) await img.decode().catch(()=>{}); }
+      catch(e){ URL.revokeObjectURL(url); addImgResult(box,f.name,null,null,'illisible'); continue; }
+      let hand=null; try{ hand=detectImage(img); }catch(e){console.error(e);}
+      if(window.__dump) window.__dump.push({name:f.name,hand});
+      resetPipe(); let got=null; onCommit=L=>{got=L;};
+      const t0=performance.now(), dur=settings.holdMs+650;
+      await new Promise(done=>{const step=()=>{ if(token!==runToken) return done(); const t=performance.now()-t0; drawStage(img,img.naturalWidth,img.naturalHeight,hand,false); setBadge(!!hand); processFrame(hand,clock+t); if(t<dur) requestAnimationFrame(step); else done(); }; step();});
+      onCommit=null; clock+=dur+2000; URL.revokeObjectURL(url);
+      if(token!==runToken) return;
+      const top=Object.keys(pipe.probs).map(c=>({c:c==='_'?'main ouverte':c,p:pipe.probs[c]})).sort((x,y)=>y.p-x.p)[0];
+      const exp=expectedFromName(f.name); if(exp){nExp++; if(got===exp) nOk++;}
+      addImgResult(box,f.name,got,top,hand?null:'aucune main détectée',exp);
+    }
+    setStatus('Mode test terminé : '+files.length+' image(s) analysée(s)'+(nExp?(' — '+nOk+' / '+nExp+' conformes au nom du fichier'):'')+'.');
+  }catch(e){
+    console.error(e); if(token!==runToken) return;
+    stopAll(); showMsg('Les images n\'ont pas pu être analysées',describeError(e),true);
+  }
+}
+// Détection sur image fixe : si la main n'est pas trouvée (image petite ou main trop près du bord), on réessaie agrandie puis avec une marge.
+function detectImage(img){
+  const w=img.naturalWidth,h=img.naturalHeight,A=w/h;
+  let hand=null;
+  if(Math.max(w,h)>=420){ hand=pickHand(hlImage.detect(img),A); if(hand) return hand; }
+  for(const pad of [0,0.2,0.35,0.1,0.45]){
+    const k=Math.max(1,Math.min(4,720/Math.max(w,h)));
+    const cw=Math.round(w*k/(1-2*pad)),chh=Math.round(h*k/(1-2*pad));
+    const c=document.createElement('canvas');c.width=cw;c.height=chh;const x=c.getContext('2d');
+    x.fillStyle='#8a8a8a';x.fillRect(0,0,cw,chh);x.imageSmoothingQuality='high';
+    x.drawImage(img,cw*pad,chh*pad,cw*(1-2*pad),chh*(1-2*pad));
+    hand=pickHand(hlImage.detect(c),A);
+    if(hand){ hand.lm=hand.lm.map(p=>({x:(p.x-pad)/(1-2*pad),y:(p.y-pad)/(1-2*pad),z:p.z})); return hand; }
+  }
+  return null;
+}
+function addImgResult(box,name,got,top,err,exp){
+  const d=document.createElement('span'); d.className='res'+(exp&&got?(got===exp?' ok':' ko'):'');
+  const pct=top?(' ('+Math.round(top.p*100)+' %)'):'';
+  d.innerHTML='<span></span> → <b></b><small></small>';
+  d.children[0].textContent=name;
+  d.children[1].textContent=got||(err?'∅':'?');
+  d.children[2].textContent=err?(' '+err):got?pct+(exp?(got===exp?' ✓':' ✗ attendu '+exp):''):(top?(' incertain : '+top.c+pct):'');
+  box.appendChild(d);
+}
+
+// ---------- apprentissage (réapprendre une lettre)
+const grid=$('#letterGrid'), trainMsg=$('#trainMsg'), cd=$('#countdown');
+function renderGrid(){
+  grid.innerHTML='';
+  for(const L of LSF.LETTERS){
+    const b=document.createElement('button'); b.type='button'; b.textContent=L; b.setAttribute('aria-pressed',L===train.letter?'true':'false');
+    const n=(userSamples[L]||[]).length; if(n){b.classList.add('has');b.title=n+' exemple(s) personnel(s)';}
+    b.addEventListener('click',()=>{train.letter=L;renderGrid();tmsg(LSF.POSES[L].motion?('« '+L+' » se reconnaît à son mouvement. Vous pouvez aussi lui apprendre une pose fixe de votre choix.'):('Prêt à réapprendre « '+L+' » : cliquez sur « Enregistrer », puis montrez votre main 3 secondes.'));});
+    grid.appendChild(b);
+  }
+  $('#btnTrain').textContent='● Enregistrer « '+train.letter+' » (3 s)';
+  $('#btnForget').textContent='Oublier « '+train.letter+' »';
+  $('#btnForget').disabled=!(userSamples[train.letter]||[]).length;
+  $('#btnForgetAll').disabled=!Object.keys(userSamples).length;
+}
+function tmsg(t,cls){trainMsg.textContent=t;trainMsg.className='trainmsg '+(cls||'');}
+function startTraining(){
+  if(train.active) return;
+  if(!source||source==='images'){tmsg('Pour réapprendre une lettre, démarrez d\'abord la caméra (ou chargez une vidéo).','err');return;}
+  train.active=true;train.phase='countdown';train.buf=[];train.t0=performance.now();
+  cd.hidden=false; $('#btnTrain').disabled=true; tmsg('Préparez la lettre « '+train.letter+' »… l\'enregistrement démarre dans 3 secondes.');
+  try{$('#stageWrap').scrollIntoView({block:'nearest',behavior:'smooth'});}catch(e){}
+  const L=train.letter;
+  const tick=()=>{
+    if(!train.active) return;
+    const t=performance.now()-train.t0;
+    if(train.phase==='countdown'){
+      $('#cdNum').textContent=String(Math.max(1,3-Math.floor(t/800))); $('#cdLbl').textContent='Formez la lettre « '+L+' »'; $('#cdLbl').className='lbl'; $('#cdProg').hidden=true;
+      if(t>=2400){train.phase='record';train.t0=performance.now();train.buf=[];}
+    }else{
+      $('#cdNum').textContent=L; $('#cdLbl').textContent='● Enregistrement… bougez très légèrement'; $('#cdLbl').className='lbl rec'; $('#cdProg').hidden=false; $('#cdProg').value=Math.min(1,t/3000);
+      if(t>=3000){finishTraining();return;}
+    }
+    requestAnimationFrame(tick);
+  };
+  tick();
+}
+function finishTraining(){
+  const L=train.letter, buf=train.buf.slice(Math.min(3,train.buf.length));
+  train.active=false;train.phase=null;cd.hidden=true;$('#btnTrain').disabled=false;
+  if(buf.length<6){tmsg('Main non détectée pendant l\'enregistrement. Placez la main bien en vue et réessayez.','err');return;}
+  const keep=[],N=Math.min(45,buf.length);
+  for(let i=0;i<N;i++) keep.push(buf[Math.floor(i*buf.length/N)]);
+  userSamples[L]=(userSamples[L]||[]).concat(keep).slice(-135);
+  saveSamples(); model.setUser(userSamples); resetPipe(); renderGrid();
+  tmsg('✓ « '+L+' » réapprise avec '+keep.length+' exemples de votre main.','ok');
+}
+$('#btnTrain').addEventListener('click',startTraining);
+$('#btnForget').addEventListener('click',()=>{delete userSamples[train.letter];saveSamples();model.setUser(userSamples);renderGrid();tmsg('Exemples personnels de « '+train.letter+' » oubliés.','ok');});
+$('#btnForgetAll').addEventListener('click',()=>{if(!confirm('Oublier tous vos exemples personnels et revenir à la reconnaissance d\'origine ?'))return;userSamples={};saveSamples();model.setUser(userSamples);renderGrid();tmsg('Reconnaissance d\'origine rétablie.','ok');});
+renderGrid();
+
+// ---------- commandes
+$('#btnStart').addEventListener('click',startCamera);
+$('#btnCam').addEventListener('click',startCamera);
+$('#btnStop').addEventListener('click',()=>{stopAll();showMsg('Arrêté','La caméra est éteinte. Relancez-la ou chargez un fichier de test.',true);setStatus('Arrêté.');});
+$('#btnVideo').addEventListener('click',()=>$('#fileVideo').click());
+$('#btnImages').addEventListener('click',()=>$('#fileImages').click());
+$('#fileVideo').addEventListener('change',e=>{const f=e.target.files[0];e.target.value='';if(f)startVideoFile(f);});
+$('#fileImages').addEventListener('change',e=>{const fs=[...e.target.files];e.target.value='';if(fs.length)startImages(fs);});
+$('#btnPlay').addEventListener('click',()=>{if(video.paused){if(video.ended){video.currentTime=0;clearWord();resetPipe();}video.play();$('#btnPlay').textContent='⏸ Pause';}else{video.pause();$('#btnPlay').textContent='▶ Lecture';}});
+$('#btnReplay').addEventListener('click',()=>{video.currentTime=0;clearWord();resetPipe();video.play();$('#btnPlay').textContent='⏸ Pause';});
+$('#selSpeed').addEventListener('change',e=>{video.playbackRate=parseFloat(e.target.value)||1;});
+$('#chkMirror').checked=settings.mirror;
+$('#chkMirror').addEventListener('change',e=>{settings.mirror=e.target.checked;saveSettings();});
+$('#chkAutoSpace').checked=settings.autoSpace;
+$('#chkAutoSpace').addEventListener('change',e=>{settings.autoSpace=e.target.checked;saveSettings();});
+const fmtHold=()=>{$('#holdVal').textContent=(settings.holdMs/1000).toFixed(1).replace('.',',')+' s';};
+$('#rngHold').value=settings.holdMs; fmtHold();
+$('#rngHold').addEventListener('input',e=>{settings.holdMs=+e.target.value;fmtHold();saveSettings();});
+$('#btnSpace').addEventListener('click',()=>appendChar(' '));
+$('#btnBack').addEventListener('click',backspace);
+$('#btnClear').addEventListener('click',()=>{clearWord();});
+$('#btnCopy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(word);setStatus('Mot copié dans le presse-papiers.');}catch(e){setStatus('Copie impossible : sélectionnez le mot à la main.');}});
+document.addEventListener('keydown',e=>{
+  const t=e.target; if(t&&(/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(t.tagName))) return;
+  if(e.ctrlKey||e.metaKey||e.altKey) return;
+  if(e.key===' '){e.preventDefault();appendChar(' ');}
+  else if(e.key==='Backspace'){e.preventDefault();backspace();}
+  else if(e.key==='Delete'){e.preventDefault();clearWord();}
+});
+// glisser-déposer
+const wrap=$('#stageWrap');
+['dragenter','dragover'].forEach(n=>wrap.addEventListener(n,e=>{e.preventDefault();}));
+wrap.addEventListener('drop',e=>{e.preventDefault();const fs=[...e.dataTransfer.files];if(!fs.length)return;const v=fs.find(f=>/^video\//.test(f.type)||/\.(mp4|webm|mov|m4v)$/i.test(f.name));if(v)startVideoFile(v);else startImages(fs);});
+
+// ---------- onglets
+function showView(name){
+  for(const n of ['reco','aide']){ $('#view-'+n).hidden=n!==name; $('#tab-'+n).setAttribute('aria-selected',n===name?'true':'false'); }
+  if(name==='aide') renderAlphabet();
+  window.scrollTo(0,0);
+}
+$('#tab-reco').addEventListener('click',()=>showView('reco'));
+$('#tab-aide').addEventListener('click',()=>showView('aide'));
+
+// ---------- page d'aide : dessin de l'alphabet
+function drawHandIcon(cv,pts,letter){
+  const ctx=cv.getContext('2d'),W=cv.width,H=cv.height; ctx.clearRect(0,0,W,H);
+  const {norm,sub,cross,dot}=LSF;
+  const u=norm(sub(pts[9],pts[0])); const l0=sub(pts[5],pts[17]); const l=norm([l0[0]-u[0]*dot(l0,u),l0[1]-u[1]*dot(l0,u),l0[2]-u[2]*dot(l0,u)]);
+  const nz=cross(l,u)[2];
+  const P=(p,a,ka,b,kb)=>[p[0]+(a?a[0]*ka:0)+(b?b[0]*kb:0),p[1]+(a?a[1]*ka:0)+(b?b[1]*kb:0),p[2]+(a?a[2]*ka:0)+(b?b[2]*kb:0)];
+  const arm=P(pts[0],u,-0.5);
+  const all=pts.concat([arm]);
+  let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9; for(const p of all){x0=Math.min(x0,p[0]);x1=Math.max(x1,p[0]);y0=Math.min(y0,p[1]);y1=Math.max(y1,p[1]);}
+  const sc=Math.min(W/3.0,(W*0.8)/Math.max(x1-x0,y1-y0,0.1));
+  const bx=(x0+x1)/2,by=(y0+y1)/2;
+  const S=p=>[W/2+(p[0]-bx)*sc,H/2-(p[1]-by)*sc+H*0.03];
+  const skinA='#f7cfa6',skinB='#e9b88c',out='#6b3f22';
+  const prims=[];
+  const poly=(arr,wd,z,fill)=>prims.push({z,draw(){
+    ctx.lineJoin='round';ctx.lineCap='round';
+    const path=()=>{ctx.beginPath();arr.forEach((p,i)=>{const q=S(p);i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);});if(fill)ctx.closePath();};
+    path();ctx.strokeStyle=out;ctx.lineWidth=(wd+0.05)*sc;ctx.stroke();
+    path();ctx.strokeStyle=fill||skinA;ctx.lineWidth=wd*sc;ctx.stroke(); if(fill){ctx.fillStyle=fill;ctx.fill();}
+  }});
+  const palmCol=nz>0?skinA:skinB;
+  const palm=[P(pts[0],l,0.2),P(pts[1],l,0.05),P(pts[5],l,0.02),pts[9],pts[13],P(pts[17],l,-0.02),P(pts[0],l,-0.24)];
+  const zPalm=(pts[0][2]+pts[5][2]+pts[9][2]+pts[13][2]+pts[17][2])/5;
+  poly(palm,0.16,zPalm,palmCol);
+  poly([P(pts[0],u,-0.05),arm],0.5,zPalm-0.3,skinB);
+  const widths=[0.2,0.17,0.17,0.16,0.14];
+  for(let f=0;f<5;f++){
+    const ids=[1+f*4,2+f*4,3+f*4,4+f*4]; const arr=ids.map(i=>pts[i]);
+    const z=(arr[1][2]+arr[2][2]+arr[3][2]*1.5)/3.5;
+    const zs=z-zPalm; const shade=zs>0.12?'#fbdcbb':(zs<-0.12?skinB:skinA);
+    prims.push({z:z+(f===0?0.02:0),draw(){
+      ctx.lineJoin='round';ctx.lineCap='round';
+      const path=()=>{ctx.beginPath();arr.forEach((p,i)=>{const q=S(p);i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);});};
+      path();ctx.strokeStyle=out;ctx.lineWidth=(widths[f]+0.05)*sc;ctx.stroke();
+      path();ctx.strokeStyle=shade;ctx.lineWidth=widths[f]*sc;ctx.stroke();
+    }});
+  }
+  prims.sort((a,b)=>a.z-b.z).forEach(p=>p.draw());
+  // flèches de mouvement
+  if(letter==='J'||letter==='Z'){
+    const tip=S(pts[letter==='J'?20:8]); const k=sc*0.42;
+    const path=letter==='Z'?[[-0.2,-0.9],[0.9,-0.9],[-0.2,0.2],[0.9,0.2]]:[[0.5,-0.5],[0.5,0.7],[0.2,1.15],[-0.35,1.0]];
+    const ox=letter==='Z'?tip[0]+k*0.5:tip[0]-k*1.6, oy=letter==='Z'?tip[1]+k*0.2:tip[1]-k*0.1;
+    ctx.strokeStyle='#7c3aed';ctx.fillStyle='#7c3aed';ctx.lineWidth=Math.max(3,W/60);ctx.lineJoin='round';ctx.lineCap='round';ctx.setLineDash([W/40,W/45]);
+    ctx.beginPath();path.forEach((p,i)=>{const x=ox+p[0]*k,y=oy+p[1]*k;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.stroke();ctx.setLineDash([]);
+    const a=path[path.length-2],b=path[path.length-1];const an=Math.atan2(b[1]-a[1],b[0]-a[0]);const ex=ox+b[0]*k,ey=oy+b[1]*k,h=W/22;
+    ctx.beginPath();ctx.moveTo(ex+Math.cos(an)*h,ey+Math.sin(an)*h);ctx.lineTo(ex+Math.cos(an+2.4)*h,ey+Math.sin(an+2.4)*h);ctx.lineTo(ex+Math.cos(an-2.4)*h,ey+Math.sin(an-2.4)*h);ctx.closePath();ctx.fill();
+  }
+}
+let alphaDone=false;
+function renderAlphabet(){
+  if(alphaDone) return; alphaDone=true;
+  const box=$('#alpha');
+  for(const L of LSF.LETTERS){
+    const def=LSF.POSES[L], pv=def.v[0];
+    const fig=document.createElement('figure');
+    const cv=document.createElement('canvas'); cv.width=360; cv.height=360; cv.setAttribute('role','img'); cv.setAttribute('aria-label','Lettre '+L+' en LSF : '+def.d);
+    drawHandIcon(cv,LSF.buildHand(pv,pv.rots[0],null),L);
+    const lab=document.createElement('div'); lab.className='L'; lab.textContent=L;
+    const cap=document.createElement('figcaption'); cap.textContent=def.d;
+    fig.append(cv,lab);
+    if(def.motion){const m=document.createElement('div');m.className='mv';m.textContent='mouvement';fig.appendChild(m);}
+    fig.appendChild(cap);
+    const b=document.createElement('button'); b.className='btn small tr'; b.textContent='Réapprendre « '+L+' »';
+    b.addEventListener('click',()=>{train.letter=L;renderGrid();showView('reco');$('#btnTrain').focus();});
+    fig.appendChild(b);
+    box.appendChild(fig);
+  }
+}
+window.__lsf={pipe,model,settings,processFrame,getWord:()=>word,startImages,startVideoFile};
+})();
+</script>
+</body>
+</html>
