@@ -14,12 +14,12 @@ Si une lettre est mal reconnue, tu peux la réapprendre en montrant ta main quel
 
 Elle a été créée pour un défi filmé sur la chaîne YouTube de Dominique Silvestre : une heure donnée à plusieurs IA, avec la même consigne, pour créer la même application, sans aucune correction humaine. Cette version est celle de **Claude Fable 5.2**, publiée telle qu'elle est sortie au bout de l'heure, avec une seule correction faite après le défi : la caméra s'éteint maintenant bien si le détecteur de main ne se charge pas.
 
-- La vidéo : lien à venir.
+- **La vidéo YouTube dédiée au défi** : [Fable 5.2 vs Opus 5.5 vs Gemini 4 : 1h pour coder une app LSF](https://youtu.be/F_Pq3q3EvNE). On y voit les apps de chaque IA testées en direct.
 - Les repères de la main ont été mesurés par l'IA sur les photos de l'alphabet LSF de [Wikimedia Commons](https://commons.wikimedia.org/wiki/Category:French_Sign_Language) (fichiers « LSF LettreX.jpg », licence CC BY-SA 3.0).
 
-## Contribuer
+## Le reprendre
 
-Les améliorations sont bienvenues, en particulier les retours de personnes qui signent : ouvre une issue ou une pull request.
+Ce projet n'est pas maintenu : il reste tel qu'il est sorti du défi. Tu peux le copier et l'améliorer librement (licence MIT).
 
 ## Noxcod
 
