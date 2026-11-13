@@ -6,7 +6,9 @@ Une application web qui reconnaît, avec ta webcam, les lettres de l'alphabet de
 
 ## L'utiliser
 
-Ouvre `index.html` dans Chrome, Edge ou Firefox, autorise la caméra, puis épelle un mot devant la webcam. Tout tourne dans ton navigateur : aucune image ne quitte ton ordinateur, et il n'y a ni serveur ni compte. Seules les bibliothèques de détection de la main (MediaPipe, de Google) sont chargées depuis internet au démarrage.
+Essaie-la en ligne : https://domsilvestre.github.io/lecteur-alphabet-lsf/ , ou télécharge `index.html` et ouvre-le directement. Dans les deux cas, utilise Chrome, Edge ou Firefox, autorise la caméra, puis épelle un mot devant la webcam.
+
+La détection tourne dans ton navigateur : aucune image ne quitte ton ordinateur, et il n'y a ni compte ni serveur qui reçoit tes images. En ligne, la page est seulement hébergée par GitHub Pages. Dans les deux cas, les bibliothèques de détection de la main (MediaPipe, de Google) sont chargées depuis internet au démarrage.
 
 Si une lettre est mal reconnue, tu peux la réapprendre en montrant ta main quelques secondes. Un mode test permet aussi de charger une vidéo ou des images à la place de la caméra.
 
